@@ -1,12 +1,12 @@
 # JSSR (Java Server-Side Rendering)
 
-A high-performance, zero-dependency Java server-side rendering framework and UI library. JSSR brings a strongly typed, Record-based component model (`public record MyComponent(...) implements JssrComponent`) to Java 17+, serving as an immutable companion library for HTMX, Alpine.js, and Spring Boot MVC.
+A high-performance, zero-dependency Java server-side rendering UI library. JSSR brings a strongly typed, Record-based component model (`public record MyComponent(...) implements JssrComponent`) to Java 17+, serving as an immutable companion library for HTMX, Alpine.js, and Spring Boot MVC.
 
 ---
 
 ## Importing from JitPack
 
-JSSR is available via JitPack for both Gradle and Maven projects.
+JSSR can be referenced from JitPack (`com.github.lemadane:JSSR`) for both Gradle and Maven projects.
 
 ### Gradle (Groovy)
 
@@ -155,12 +155,13 @@ public class UserController {
 
 ## Library Architecture
 
-`src/main/java` contains the pure, minimal JSSR framework:
+`src/main/java` contains the pure, minimal JSSR library:
 
 ```
 JSSR/
 ├── build.gradle                          # Groovy-Gradle configuration
 ├── jitpack.yml                           # JitPack build configuration
+├── LICENSE                               # MIT License
 ├── README.md                             # Documentation
 └── src/
     ├── main/
@@ -183,3 +184,9 @@ Run unit and E2E integration tests:
 ```bash
 gradle test
 ```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](file:///home/lem/Projects/java/JSSR/LICENSE).
