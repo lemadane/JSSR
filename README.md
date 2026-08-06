@@ -1,6 +1,31 @@
 # JSSR (Java Server-Side Rendering)
 
-A high-performance, zero-dependency Java server-side rendering UI library. JSSR brings a strongly typed, Record-based component model (`public record MyComponent(...) implements JssrComponent`) to Java 17+, serving as an immutable companion library for HTMX, Alpine.js, and Spring Boot MVC.
+A high-performance, zero-dependency Java server-side rendering framework and UI library. JSSR brings a strongly typed, Record-based component model (`public record MyComponent(...) implements JssrComponent`) to Java 17+, serving as an immutable companion library for HTMX, Alpine.js, and Spring Boot MVC.
+
+---
+
+## Why Use JSSR?
+
+Traditional Java web development forces developers into a hard choice between traditional template engines (Thymeleaf, JSP, FreeMarker) with untyped HTML templates, or heavy Single Page Application (SPA) frameworks (React, Next.js, Vue) requiring complex Node.js build pipelines and duplicate DTO definitions.
+
+JSSR combines the best of both worlds by bringing React-like component architecture to modern Java 17+:
+
+- **100% Compile-Time Type Safety**: Every UI component is an immutable Java Record. Component props are validated by the Java compiler, providing full IDE autocomplete and safe refactoring across your codebase.
+- **Native Java 17 Multiline Text Blocks**: HTML templates use native Java string text blocks (`"""..."""`) formatted with standard String formatting (`.formatted()`). No template parser overhead or custom template syntax to learn.
+- **Declarative JSX-Style Component Trees**: Compose nested component trees in Java (`<UserCard name="Sarah" role="Admin" />`). JSSR automatically resolves custom tags, converts attributes to record parameter types, and renders nested component trees recursively.
+- **Micro-Granular SSR for HTMX & Alpine.js**: Every component is an independent executable unit. Spring MVC controllers can return single component instances (`return new UserRow(user);`) for microsecond HTMX swaps.
+- **Zero Build Toolchain Overhead**: No `node_modules`, no npm, no Webpack, no Vite, and no JavaScript build steps. Pure Java 17+ packaged into a standard JAR.
+- **Zero Third-Party Core Dependencies**: The core JSSR engine (`com.jssr.core.JssrComponent`) is written in 100% pure standard Java.
+
+### Quick Comparison
+
+| Feature | Thymeleaf / JSP | React / Next.js + Java | JSSR |
+| :--- | :--- | :--- | :--- |
+| **Component Architecture** | Weak / Fragment includes | Excellent | **React-like Java Records** |
+| **Type Safety** | None (Untyped Strings) | TypeScript (Duplicate DTOs) | **100% Java Compiler Safe** |
+| **Build Toolchain** | Maven / Gradle | Node.js + npm + Webpack + Maven | **Gradle / Maven Only** |
+| **HTMX / Fragment SSR** | Clunky fragments | Not Supported (JSON APIs) | **Native Component Swapping** |
+| **Performance** | Template Parsing Overhead | Client-side JS Bundle Overhead | **JVM Microsecond Rendering** |
 
 ---
 
@@ -155,7 +180,7 @@ public class UserController {
 
 ## Library Architecture
 
-`src/main/java` contains the pure, minimal JSSR library:
+`src/main/java` contains the pure, minimal JSSR framework:
 
 ```
 JSSR/
