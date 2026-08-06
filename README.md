@@ -11,21 +11,35 @@ Traditional Java web development forces developers into a hard choice between tr
 JSSR combines the best of both worlds by bringing React-like component architecture to modern Java 17+:
 
 - **100% Compile-Time Type Safety**: Every UI component is an immutable Java Record. Component props are validated by the Java compiler, providing full IDE autocomplete and safe refactoring across your codebase.
-- **Native Java 17 Multiline Text Blocks**: HTML templates use native Java string text blocks (`"""..."""`) formatted with standard String formatting (`.formatted()`). No template parser overhead or custom template syntax to learn.
+- **Native Java 17 Multiline Text Blocks with ${fieldName} Interpolation**: HTML templates use native Java text blocks (`"""..."""`). Placeholders like `${name}` or `${role}` are automatically interpolated from Record fields, or formatted with standard `.formatted(...)`.
 - **Declarative JSX-Style Component Trees**: Compose nested component trees in Java (`<UserCard name="Sarah" role="Admin" />`). JSSR automatically resolves custom tags, converts attributes to record parameter types, and renders nested component trees recursively.
 - **Micro-Granular SSR for HTMX & Alpine.js**: Every component is an independent executable unit. Spring MVC controllers can return single component instances (`return new UserRow(user);`) for microsecond HTMX swaps.
 - **Zero Build Toolchain Overhead**: No `node_modules`, no npm, no Webpack, no Vite, and no JavaScript build steps. Pure Java 17+ packaged into a standard JAR.
 - **Zero Third-Party Core Dependencies**: The core JSSR engine (`com.jssr.core.JssrComponent`) is written in 100% pure standard Java.
 
-### Quick Comparison
+---
 
-| Feature | Thymeleaf / JSP | React / Next.js + Java | JSSR |
-| :--- | :--- | :--- | :--- |
-| **Component Architecture** | Weak / Fragment includes | Excellent | **React-like Java Records** |
-| **Type Safety** | None (Untyped Strings) | TypeScript (Duplicate DTOs) | **100% Java Compiler Safe** |
-| **Build Toolchain** | Maven / Gradle | Node.js + npm + Webpack + Maven | **Gradle / Maven Only** |
-| **HTMX / Fragment SSR** | Clunky fragments | Not Supported (JSON APIs) | **Native Component Swapping** |
-| **Performance** | Template Parsing Overhead | Client-side JS Bundle Overhead | **JVM Microsecond Rendering** |
+## How Variable Interpolation Works
+
+In JSSR component Records, any field (e.g. `name`, `role`, `active`) can be referenced directly using `${fieldName}` syntax inside multiline text blocks:
+
+```java
+public record UserCard(String name, String role, boolean active) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div class="user-card border p-4 rounded-xl">
+                <h3 class="font-bold text-lg">${name}</h3>
+                <p class="text-sm text-gray-500">${role}</p>
+                <span class="badge">${active}</span>
+            </div>
+            """;
+    }
+}
+```
+
+JSSR's `render()` method automatically interpolates all `${fieldName}` placeholders using reflection on the Record's field values before processing custom tags.
 
 ---
 
@@ -110,11 +124,11 @@ public record UserCard(String name, String role, boolean active) implements Jssr
     public String template() {
         return """
             <div class="user-card border p-4 rounded-xl">
-                <h3 class="font-bold text-lg">%s</h3>
-                <p class="text-sm text-gray-500">%s</p>
-                <span class="badge">%s</span>
+                <h3 class="font-bold text-lg">${name}</h3>
+                <p class="text-sm text-gray-500">${role}</p>
+                <span class="badge">${active}</span>
             </div>
-            """.formatted(name, role, active ? "Active" : "Inactive");
+            """;
     }
 }
 ```

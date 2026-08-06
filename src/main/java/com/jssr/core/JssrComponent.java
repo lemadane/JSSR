@@ -36,13 +36,47 @@ public interface JssrComponent {
     String template();
 
     /**
-     * Primary entry point. Renders the template and automatically processes custom tags.
+     * Primary entry point. Interpolates ${fieldName} variables, renders the template,
+     * and automatically processes custom tags.
      *
-     * @return Fully rendered HTML string with resolved child tags
+     * @return Fully rendered HTML string with resolved variables and child tags
      */
     default String render() {
         String rawHtml = template();
-        return rawHtml == null ? "" : processCustomTags(rawHtml);
+        if (rawHtml == null || rawHtml.isBlank()) {
+            return rawHtml == null ? "" : rawHtml;
+        }
+
+        String interpolatedHtml = interpolateVariables(this, rawHtml);
+        return processCustomTags(interpolatedHtml);
+    }
+
+    /**
+     * Interpolate ${fieldName} placeholders in HTML templates using Record field values.
+     *
+     * @param component The component instance
+     * @param html HTML template string containing ${fieldName} placeholders
+     * @return HTML string with interpolated variable values
+     */
+    static String interpolateVariables(JssrComponent component, String html) {
+        if (component == null || html == null || html.isBlank()) {
+            return html == null ? "" : html;
+        }
+
+        Class<?> clazz = component.getClass();
+        if (clazz.isRecord()) {
+            RecordComponent[] recordComponents = clazz.getRecordComponents();
+            for (RecordComponent rc : recordComponents) {
+                try {
+                    Object val = rc.getAccessor().invoke(component);
+                    String valStr = val == null ? "" : val.toString();
+                    String placeholder = "${" + rc.getName() + "}";
+                    html = html.replace(placeholder, valStr);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return html;
     }
 
     /**

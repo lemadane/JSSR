@@ -12,15 +12,15 @@ class ComponentTest {
         public String template() {
             return """
                 <div class="card" hx-get="/card" x-data="{ open: true }">
-                    <h2>%s</h2>
-                    <span>Count: %d</span>
-                    <span>Status: %s</span>
+                    <h2>${title}</h2>
+                    <span>Count: ${count}</span>
+                    <span>Status: ${active}</span>
                 </div>
-                """.formatted(title, count, active ? "ACTIVE" : "INACTIVE");
+                """;
         }
     }
 
-    public record ContainerComponent() implements JssrComponent {
+    public record ContainerComponent(String appName) implements JssrComponent {
         static {
             JssrComponent.register("CardComponent", CardComponent.class);
         }
@@ -29,6 +29,7 @@ class ComponentTest {
         public String template() {
             return """
                 <main>
+                    <h1>${appName}</h1>
                     <CardComponent title="Users" count="42" active="true" />
                     <CardComponent title="Tasks" count="10" active="false" />
                 </main>
@@ -37,8 +38,8 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Single Record-based JssrComponent template & render should return formatted HTML text block")
-    void testSingleComponentRender() {
+    @DisplayName("Single Record-based JssrComponent should interpolate ${fieldName} variables")
+    void testVariableInterpolation() {
         CardComponent card = new CardComponent("Dashboard", 5, true);
         String html = card.render();
 
@@ -46,22 +47,23 @@ class ComponentTest {
         assertTrue(html.contains("x-data=\"{ open: true }\""));
         assertTrue(html.contains("<h2>Dashboard</h2>"));
         assertTrue(html.contains("Count: 5"));
-        assertTrue(html.contains("Status: ACTIVE"));
+        assertTrue(html.contains("Status: true"));
     }
 
     @Test
-    @DisplayName("Parent JssrComponent render() should automatically process custom child tags without manual processCustomTags call")
-    void testCustomTagParsing() {
-        ContainerComponent container = new ContainerComponent();
+    @DisplayName("Parent JssrComponent render() should interpolate parent ${appName} and resolve custom child tags")
+    void testCustomTagParsingAndInterpolation() {
+        ContainerComponent container = new ContainerComponent("JSSR Control Panel");
         String html = container.render();
 
+        assertTrue(html.contains("<h1>JSSR Control Panel</h1>"));
         assertFalse(html.contains("<CardComponent"));
         assertTrue(html.contains("<h2>Users</h2>"));
         assertTrue(html.contains("Count: 42"));
-        assertTrue(html.contains("Status: ACTIVE"));
+        assertTrue(html.contains("Status: true"));
 
         assertTrue(html.contains("<h2>Tasks</h2>"));
         assertTrue(html.contains("Count: 10"));
-        assertTrue(html.contains("Status: INACTIVE"));
+        assertTrue(html.contains("Status: false"));
     }
 }
