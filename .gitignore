@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+out/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Temporary artifacts
+*.jar
+*.war
