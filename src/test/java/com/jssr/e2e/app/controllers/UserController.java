@@ -2,6 +2,7 @@ package com.jssr.e2e.app.controllers;
 
 import com.jssr.core.JssrComponent;
 import com.jssr.e2e.app.components.PageLayout;
+import com.jssr.e2e.app.components.UserForm;
 import com.jssr.e2e.app.components.UserList;
 import com.jssr.e2e.app.model.User;
 import com.jssr.e2e.app.repository.UserRepository;
@@ -31,6 +32,21 @@ public class UserController {
     @GetMapping("/users")
     public JssrComponent getUsers() {
         return renderUserListComponent(repository.findAll(), "", null, null);
+    }
+
+    @GetMapping("/users/new")
+    public JssrComponent renderNewUserForm() {
+        return new UserForm();
+    }
+
+    @GetMapping("/users/{id}/edit")
+    public JssrComponent renderEditUserForm(@PathVariable("id") Long id) {
+        Optional<User> userOpt = repository.findById(id);
+        if (userOpt.isPresent()) {
+            User u = userOpt.get();
+            return new UserForm(u.id(), u.name(), u.email(), u.role(), u.status(), true);
+        }
+        return new UserForm();
     }
 
     @GetMapping("/users/search")

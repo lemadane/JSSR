@@ -61,7 +61,38 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("2. Live Search & Filtering Tests")
+    @DisplayName("2. UserForm Component Rendering Tests")
+    class UserFormComponentTests {
+
+        @Test
+        @DisplayName("GET /users/new should render JSSR UserForm component for creation with clean defaults")
+        void testRenderNewUserForm() throws Exception {
+            mockMvc.perform(get("/users/new"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                    .andExpect(content().string(containsString("id=\"user-form-modal\"")))
+                    .andExpect(content().string(containsString("Create New User")))
+                    .andExpect(content().string(containsString("hx-post=\"/users\"")))
+                    .andExpect(content().string(containsString("Create User")));
+        }
+
+        @Test
+        @DisplayName("GET /users/1/edit should render JSSR UserForm component pre-filled with user record attributes using variable interpolation")
+        void testRenderEditUserForm() throws Exception {
+            mockMvc.perform(get("/users/1/edit"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                    .andExpect(content().string(containsString("id=\"user-form-modal\"")))
+                    .andExpect(content().string(containsString("Edit User")))
+                    .andExpect(content().string(containsString("hx-post=\"/users/1\"")))
+                    .andExpect(content().string(containsString("value=\"Sarah Connor\"")))
+                    .andExpect(content().string(containsString("value=\"sarah.connor@jssr.dev\"")))
+                    .andExpect(content().string(containsString("Save Changes")));
+        }
+    }
+
+    @Nested
+    @DisplayName("3. Live Search & Filtering Tests")
     class SearchAndFilterTests {
 
         @Test
@@ -97,7 +128,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("3. User Creation Tests")
+    @DisplayName("4. User Creation Tests")
     class UserCreationTests {
 
         @Test
@@ -117,7 +148,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("4. User Update Tests")
+    @DisplayName("5. User Update Tests")
     class UserUpdateTests {
 
         @Test
@@ -149,13 +180,12 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("5. User Status Toggle Tests")
+    @DisplayName("6. User Status Toggle Tests")
     class UserStatusToggleTests {
 
         @Test
         @DisplayName("POST /users/{id}/toggle should switch user from INACTIVE to ACTIVE")
         void testToggleUserStatusInactiveToActive() throws Exception {
-            // User 3 (Elena Rostova) is initially INACTIVE
             mockMvc.perform(post("/users/3/toggle"))
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString("Status for 'Elena Rostova' changed to ACTIVE")));
@@ -164,7 +194,6 @@ class UserCrudE2ETest {
         @Test
         @DisplayName("POST /users/{id}/toggle should switch user from ACTIVE to INACTIVE")
         void testToggleUserStatusActiveToInactive() throws Exception {
-            // User 1 (Sarah Connor) is initially ACTIVE
             mockMvc.perform(post("/users/1/toggle"))
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString("Status for 'Sarah Connor' changed to INACTIVE")));
@@ -172,7 +201,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("6. User Deletion Tests")
+    @DisplayName("7. User Deletion Tests")
     class UserDeletionTests {
 
         @Test
