@@ -45,7 +45,7 @@ public interface JssrComponent {
     String template();
 
     /**
-     * Primary entry point. Interpolates ${fieldName} variables, renders the template,
+     * Primary entry point. Interpolates ${fieldName} variables in a single pass, renders the template,
      * and automatically processes custom tags with depth recursion protection.
      *
      * @return Fully rendered HTML string with resolved variables and child tags
@@ -124,51 +124,81 @@ public interface JssrComponent {
     }
 
     /**
-     * Interpolate ${fieldName} placeholders in HTML templates using Record field values.
+     * Interpolate ${fieldName} placeholders in HTML templates using a single-pass scanner to prevent
+     * cascading interpolation or double-evaluating inserted values.
      *
      * @param component The component instance
      * @param html HTML template string containing ${fieldName} placeholders
      * @return HTML string with interpolated variable values
      */
     static String interpolateVariables(JssrComponent component, String html) {
-        if (component == null || html == null || html.isBlank()) {
+        if (component == null || html == null || html.isBlank() || !html.contains("${")) {
             return html == null ? "" : html;
         }
 
         Class<?> clazz = component.getClass();
-        if (clazz.isRecord()) {
-            RecordComponent[] recordComponents = clazz.getRecordComponents();
-            for (RecordComponent rc : recordComponents) {
-                try {
-                    Method accessor = rc.getAccessor();
-                    accessor.setAccessible(true);
-                    Object val = accessor.invoke(component);
-                    String valStr;
-                    if (val == null) {
-                        valStr = "";
-                    } else if (val instanceof RawHtml raw) {
-                        valStr = raw.value() == null ? "" : raw.value();
-                    } else if (val instanceof SafeUrl safe) {
-                        valStr = escapeHtml(safe.render());
-                    } else if (val instanceof JssrComponent jc) {
-                        valStr = jc.render();
-                    } else {
-                        valStr = escapeHtml(val.toString());
-                    }
-                    String placeholder = "${" + rc.getName() + "}";
-                    html = html.replace(placeholder, valStr);
-                } catch (Exception e) {
-                    throw new RuntimeException("JSSR render error: Unable to read property '"
-                            + rc.getName() + "' from component " + clazz.getSimpleName(), e);
+        if (!clazz.isRecord()) {
+            return html;
+        }
+
+        RecordComponent[] recordComponents = clazz.getRecordComponents();
+        Map<String, String> valuesMap = new HashMap<>();
+        for (RecordComponent rc : recordComponents) {
+            try {
+                Method accessor = rc.getAccessor();
+                accessor.setAccessible(true);
+                Object val = accessor.invoke(component);
+                String valStr;
+                if (val == null) {
+                    valStr = "";
+                } else if (val instanceof RawHtml raw) {
+                    valStr = raw.value() == null ? "" : raw.value();
+                } else if (val instanceof SafeUrl safe) {
+                    valStr = escapeHtml(safe.render());
+                } else if (val instanceof JssrComponent jc) {
+                    valStr = jc.render();
+                } else {
+                    valStr = escapeHtml(val.toString());
                 }
+                valuesMap.put(rc.getName(), valStr);
+            } catch (Exception e) {
+                throw new RuntimeException("JSSR render error: Unable to read property '"
+                        + rc.getName() + "' from component " + clazz.getSimpleName(), e);
             }
         }
-        return html;
+
+        StringBuilder sb = new StringBuilder(html.length() + 32);
+        int len = html.length();
+        int i = 0;
+        while (i < len) {
+            int start = html.indexOf("${", i);
+            if (start == -1) {
+                sb.append(html, i, len);
+                break;
+            }
+
+            sb.append(html, i, start);
+            int end = html.indexOf('}', start + 2);
+            if (end == -1) {
+                sb.append(html, start, len);
+                break;
+            }
+
+            String varName = html.substring(start + 2, end).trim();
+            if (valuesMap.containsKey(varName)) {
+                sb.append(valuesMap.get(varName));
+                i = end + 1;
+            } else {
+                sb.append("${").append(varName).append("}");
+                i = end + 1;
+            }
+        }
+        return sb.toString();
     }
 
     /**
-     * Process custom JSX-like child tags inside rendered HTML strings using a quote-aware state machine parser
-     * with nesting depth tracking for paired tags.
+     * Process custom JSX-like child tags inside rendered HTML strings using a context-aware state machine parser
+     * skipping comments, scripts, styles, and quoted attribute values, with nesting depth tracking for paired tags.
      *
      * @param html HTML input string containing custom tags
      * @return Rendered HTML string with custom tags replaced by component HTML
@@ -192,7 +222,46 @@ public interface JssrComponent {
             sb.append(html, i, openBracket);
             i = openBracket;
 
-            int tagStart = openBracket + 1;
+            // 1. Skip HTML comments: <!-- ... -->
+            if (i + 4 <= len && html.startsWith("<!--", i)) {
+                int commentEnd = html.indexOf("-->", i + 4);
+                if (commentEnd != -1) {
+                    int endPos = commentEnd + 3;
+                    sb.append(html, i, endPos);
+                    i = endPos;
+                    continue;
+                }
+            }
+
+            // 2. Skip <script ...>...</script>
+            if (i + 7 <= len && html.substring(i, Math.min(i + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int tagClose = html.indexOf('>', i);
+                if (tagClose != -1) {
+                    int scriptEnd = html.toLowerCase(Locale.ROOT).indexOf("</script>", tagClose + 1);
+                    if (scriptEnd != -1) {
+                        int endPos = scriptEnd + 9;
+                        sb.append(html, i, endPos);
+                        i = endPos;
+                        continue;
+                    }
+                }
+            }
+
+            // 3. Skip <style ...>...</style>
+            if (i + 6 <= len && html.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int tagClose = html.indexOf('>', i);
+                if (tagClose != -1) {
+                    int styleEnd = html.toLowerCase(Locale.ROOT).indexOf("</style>", tagClose + 1);
+                    if (styleEnd != -1) {
+                        int endPos = styleEnd + 8;
+                        sb.append(html, i, endPos);
+                        i = endPos;
+                        continue;
+                    }
+                }
+            }
+
+            int tagStart = i + 1;
             if (tagStart < len && Character.isUpperCase(html.charAt(tagStart))) {
                 int tagNameEnd = tagStart;
                 while (tagNameEnd < len && Character.isLetterOrDigit(html.charAt(tagNameEnd))) {
@@ -233,6 +302,7 @@ public interface JssrComponent {
                                 Map<String, String> attrs = parseAttributes(attrString);
 
                                 int nextIndex = tagEnd + 1;
+                                boolean hasPairedBody = false;
                                 if (!isSelfClosing) {
                                     int matchingClose = findMatchingClosingTagIndex(html, tagEnd + 1, tagName);
                                     if (matchingClose == -1) {
@@ -242,10 +312,11 @@ public interface JssrComponent {
                                     String bodyContent = html.substring(tagEnd + 1, matchingClose);
                                     attrs.put("children", bodyContent);
                                     attrs.put("content", bodyContent);
+                                    hasPairedBody = true;
                                     nextIndex = matchingClose + ("</" + tagName + ">").length();
                                 }
 
-                                String renderedChild = instantiateAndRender(clazz, attrs);
+                                String renderedChild = instantiateAndRender(clazz, attrs, hasPairedBody);
                                 sb.append(renderedChild);
                                 i = nextIndex;
                                 continue;
@@ -277,20 +348,29 @@ public interface JssrComponent {
                 return -1;
             }
 
-            // Check if open tag is a valid tag match (followed by space, /, or >)
             boolean isValidOpen = false;
+            boolean isSelfClosingOpen = false;
             if (nextOpen != -1) {
                 int endNameIndex = nextOpen + openTagPrefix.length();
                 if (endNameIndex < len) {
                     char c = html.charAt(endNameIndex);
                     if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '/' || c == '>') {
                         isValidOpen = true;
+                        int openTagEnd = html.indexOf('>', endNameIndex);
+                        if (openTagEnd != -1) {
+                            String rawContent = html.substring(endNameIndex, openTagEnd).trim();
+                            if (rawContent.endsWith("/")) {
+                                isSelfClosingOpen = true;
+                            }
+                        }
                     }
                 }
             }
 
             if (isValidOpen && nextOpen < nextClose) {
-                nestingDepth++;
+                if (!isSelfClosingOpen) {
+                    nestingDepth++;
+                }
                 curr = nextOpen + openTagPrefix.length();
             } else {
                 nestingDepth--;
@@ -372,13 +452,23 @@ public interface JssrComponent {
         return attrs;
     }
 
-    private static String instantiateAndRender(Class<? extends JssrComponent> clazz, Map<String, String> attrs) {
+    private static String instantiateAndRender(Class<? extends JssrComponent> clazz, Map<String, String> attrs, boolean hasPairedBody) {
         try {
             if (clazz.isRecord()) {
                 RecordComponent[] recordComponents = clazz.getRecordComponents();
                 Set<String> validNames = new HashSet<>();
+                boolean acceptsBody = false;
                 for (RecordComponent rc : recordComponents) {
                     validNames.add(rc.getName());
+                    if ("children".equals(rc.getName()) || "content".equals(rc.getName())) {
+                        acceptsBody = true;
+                    }
+                }
+
+                if (hasPairedBody && !acceptsBody) {
+                    throw new IllegalArgumentException("Component <" + clazz.getSimpleName() 
+                            + "> does not accept paired body content. Use self-closing tag <" 
+                            + clazz.getSimpleName() + " ... /> or declare a 'children' or 'content' prop.");
                 }
 
                 for (String attrName : attrs.keySet()) {
@@ -403,14 +493,10 @@ public interface JssrComponent {
                 JssrComponent instance = ctor.newInstance(args);
                 return instance.render();
             } else {
-                Constructor<?>[] ctors = clazz.getConstructors();
-                Constructor<?> ctor = ctors[0];
+                Constructor<?> ctor = clazz.getDeclaredConstructor();
                 ctor.setAccessible(true);
-                if (ctor.getParameterCount() == 0) {
-                    JssrComponent instance = (JssrComponent) ctor.newInstance();
-                    return instance.render();
-                }
-                throw new IllegalStateException("Non-record component <" + clazz.getSimpleName() + "> must be a Record or have a no-arg constructor.");
+                JssrComponent instance = (JssrComponent) ctor.newInstance();
+                return instance.render();
             }
         } catch (Exception e) {
             if (e instanceof RuntimeException re) throw re;
@@ -436,7 +522,6 @@ public interface JssrComponent {
             return unescapeHtml(rawVal);
         }
         if (targetType == RawHtml.class) {
-            // Preserve raw body content without re-unescaping already escaped HTML entities
             return RawHtml.of(rawVal);
         }
         if (targetType == SafeUrl.class) {

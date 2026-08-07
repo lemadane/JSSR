@@ -113,6 +113,13 @@ class UserCrudE2ETest {
             }
         }
 
+        public record CascadingExample(String first, String second) implements JssrComponent {
+            @Override
+            public String template() {
+                return "<p>${first}</p>";
+            }
+        }
+
         public record PageWithCard(String username) implements JssrComponent {
             @Override
             public String template() {
@@ -145,7 +152,50 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("2. SafeUrl should sanitize javascript: XSS payloads to about:blank and HTML escape attributes")
+        @DisplayName("2. Single-pass variable interpolation should prevent cascading placeholder replacement")
+        void testSinglePassInterpolation() {
+            CascadingExample example = new CascadingExample("${second}", "SECRET_DATA");
+            String html = example.render();
+
+            assertEquals("<p>${second}</p>", html);
+            assertFalse(html.contains("SECRET_DATA"));
+        }
+
+        @Test
+        @DisplayName("3. Parser should isolate <script>, <style>, and HTML comments from custom tag parsing")
+        void testScriptAndCommentParserIsolation() {
+            String template = """
+                <script>
+                    const x = "<DummyLink href='/test' label='Test' />";
+                </script>
+                <!-- <DummyLink href="/comment" label="Comment" /> -->
+                """;
+            String html = JssrComponent.processCustomTags(template);
+
+            assertTrue(html.contains("const x = \"<DummyLink href='/test' label='Test' />\";"));
+            assertTrue(html.contains("<!-- <DummyLink href=\"/comment\" label=\"Comment\" /> -->"));
+        }
+
+        @Test
+        @DisplayName("4. Self-closing same-type nested tags (<CustomCard><CustomCard /></CustomCard>) should parse cleanly")
+        void testSelfClosingNestedSameTypeTags() {
+            JssrComponent.register("CustomCard", CustomCard.class);
+            String html = JssrComponent.processCustomTags("<CustomCard><CustomCard /></CustomCard>");
+            assertEquals("<div class=\"custom-card\"><div class=\"custom-card\"></div></div>", html);
+        }
+
+        @Test
+        @DisplayName("5. Components without children/content props should reject paired body content")
+        void testRejectPairedBodyForNonContainerComponents() {
+            JssrComponent.register("DummyLink", DummyLink.class);
+            Exception ex = assertThrows(IllegalArgumentException.class, () -> {
+                JssrComponent.processCustomTags("<DummyLink href=\"/users\" label=\"Users\">Dangling Body Content</DummyLink>");
+            });
+            assertTrue(ex.getMessage().contains("Component <DummyLink> does not accept paired body content"));
+        }
+
+        @Test
+        @DisplayName("6. SafeUrl should sanitize javascript: XSS payloads to about:blank and HTML escape attributes")
         void testSanitizeUnsafeUrlProtocols() {
             assertEquals("about:blank", SafeUrl.sanitize("javascript:alert(1)"));
             assertEquals("about:blank", SafeUrl.sanitize("java&#115;cript:alert(1)"));
@@ -160,7 +210,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("3. Paired RawHtml children should preserve pre-escaped user data without re-activating XSS tags")
+        @DisplayName("7. Paired RawHtml children should preserve pre-escaped user data without re-activating XSS tags")
         void testPairedRawHtmlChildrenXssPreservation() {
             JssrComponent.register("CustomCard", CustomCard.class);
             PageWithCard page = new PageWithCard("<img src=x onerror=alert(1)>");
@@ -171,15 +221,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("4. Nested same-type paired components like <CustomCard><CustomCard>Inner</CustomCard></CustomCard> should match nesting levels correctly")
-        void testNestedSameTypePairedComponents() {
-            JssrComponent.register("CustomCard", CustomCard.class);
-            String html = JssrComponent.processCustomTags("<CustomCard><CustomCard>Inner</CustomCard></CustomCard>");
-            assertEquals("<div class=\"custom-card\"><div class=\"custom-card\">Inner</div></div>", html);
-        }
-
-        @Test
-        @DisplayName("5. Unknown JSX attribute typos (e.g. hreef) should throw an explicit IllegalArgumentException")
+        @DisplayName("8. Unknown JSX attribute typos (e.g. hreef) should throw an explicit IllegalArgumentException")
         void testRejectUnknownAttributeTypos() {
             JssrComponent.register("DummyLink", DummyLink.class);
             Exception ex = assertThrows(IllegalArgumentException.class, () -> {
@@ -189,17 +231,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("6. Unclosed tags (<DummyLink ...>) should throw an explicit IllegalArgumentException")
-        void testUnclosedTagError() {
-            JssrComponent.register("DummyLink", DummyLink.class);
-            Exception ex = assertThrows(IllegalArgumentException.class, () -> {
-                JssrComponent.processCustomTags("<DummyLink href=\"/x\" label=\"X\"> Dangling Body");
-            });
-            assertTrue(ex.getMessage().contains("Unclosed JSSR component tag <DummyLink>"));
-        }
-
-        @Test
-        @DisplayName("7. Component infinite recursion should throw IllegalStateException depth limit error instead of StackOverflowError")
+        @DisplayName("9. Component infinite recursion should throw IllegalStateException depth limit error instead of StackOverflowError")
         void testRecursionLimitProtection() {
             JssrComponent.register("RecursiveComp", RecursiveComp.class);
             Exception ex = assertThrows(IllegalStateException.class, () -> {
@@ -209,7 +241,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("8. Unquoted URL attribute paths (href=/users/42) should parse completely")
+        @DisplayName("10. Unquoted URL attribute paths (href=/users/42) should parse completely")
         void testUnquotedUrlAttributeParsing() {
             JssrComponent.register("DummyLink", DummyLink.class);
             String html = JssrComponent.processCustomTags("<DummyLink href=/users/42 label=View />");

@@ -63,6 +63,13 @@ class ComponentTest {
         }
     }
 
+    public record CascadingExample(String first, String second) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<p>${first}</p>";
+        }
+    }
+
     public record HtmxButton(String hxGet, String label) implements JssrComponent {
         @Override
         public String template() {
@@ -196,6 +203,47 @@ class ComponentTest {
         JssrComponent.register("Card", Card.class);
         JssrComponent.register("Self", Self.class);
         JssrComponent.register("UserPageWithCard", UserPageWithCard.class);
+    }
+
+    @Test
+    @DisplayName("Self-closing same-type nested components like <Card><Card /></Card> should parse cleanly")
+    void testSelfClosingNestedSameTypeComponents() {
+        String html = JssrComponent.processCustomTags("<Card><Card /></Card>");
+        assertEquals("<div class=\"card\"><div class=\"card\"></div></div>", html);
+    }
+
+    @Test
+    @DisplayName("Component tags inside <script>, <style>, and HTML comments should be ignored")
+    void testParserScriptCommentAttributeIsolation() {
+        String input = """
+            <script>
+                const template = "<Badge text='Hello' />";
+            </script>
+            <!-- <Badge text="Hidden" /> -->
+            """;
+        String html = JssrComponent.processCustomTags(input);
+
+        assertTrue(html.contains("const template = \"<Badge text='Hello' />\";"));
+        assertTrue(html.contains("<!-- <Badge text=\"Hidden\" /> -->"));
+    }
+
+    @Test
+    @DisplayName("Single-pass variable interpolation should prevent cascading placeholder evaluation")
+    void testSinglePassVariableInterpolation() {
+        CascadingExample example = new CascadingExample("${second}", "SECRET");
+        String html = example.render();
+
+        assertEquals("<p>${second}</p>", html);
+        assertFalse(html.contains("SECRET"));
+    }
+
+    @Test
+    @DisplayName("Components that do NOT declare a children or content prop should reject paired tag body content")
+    void testStrictPairedBodyValidation() {
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            JssrComponent.processCustomTags("<Link href=\"/users\" label=\"Users\">THIS SHOULD FAIL</Link>");
+        });
+        assertTrue(exception.getMessage().contains("Component <Link> does not accept paired body content"));
     }
 
     @Test
