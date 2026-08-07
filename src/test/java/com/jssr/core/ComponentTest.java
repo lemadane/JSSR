@@ -80,6 +80,20 @@ class ComponentTest {
         }
     }
 
+    public record Card(RawHtml children) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div class=\"card\">${children}</div>";
+        }
+    }
+
+    public record Self() implements JssrComponent {
+        @Override
+        public String template() {
+            return "<Self />";
+        }
+    }
+
     public record ScalarProps(
             double amount,
             Double discount,
@@ -168,6 +182,8 @@ class ComponentTest {
         JssrComponent.register("TestDefaults", TestDefaults.class);
         JssrComponent.register("TaskItem", TaskItem.class);
         JssrComponent.register("PackagePrivateCard", PackagePrivateCard.class);
+        JssrComponent.register("Card", Card.class);
+        JssrComponent.register("Self", Self.class);
     }
 
     @Test
@@ -188,6 +204,56 @@ class ComponentTest {
 
         assertEquals("<a href=\"/users?a=1&amp;b=2\">Tom &amp; Jerry</a>", html);
         assertFalse(html.contains("&amp;amp;"));
+    }
+
+    @Test
+    @DisplayName("Unsafe URL protocols like javascript:, vbscript:, data: should be sanitized via SafeUrl")
+    void testUnsafeUrlSanitization() {
+        assertEquals("about:blank", SafeUrl.sanitize("javascript:alert(1)"));
+        assertEquals("about:blank", SafeUrl.sanitize("vbscript:msgbox(1)"));
+        assertEquals("about:blank", SafeUrl.sanitize("data:text/html,<script>alert(1)</script>"));
+        assertEquals("/users/42", SafeUrl.sanitize("/users/42"));
+    }
+
+    @Test
+    @DisplayName("Unknown component prop attributes (typos) should throw an explicit IllegalArgumentException")
+    void testStrictPropsValidation() {
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            JssrComponent.processCustomTags("<Link hreef=\"/users\" label=\"Users\" />");
+        });
+        assertTrue(exception.getMessage().contains("Unknown attribute 'hreef' specified for JSSR component <Link>"));
+    }
+
+    @Test
+    @DisplayName("Paired component tags like <Card>BODY</Card> should pass inner content to children prop")
+    void testPairedComponentTags() {
+        String html = JssrComponent.processCustomTags("<Card><h1>Header</h1></Card>");
+        assertEquals("<div class=\"card\"><h1>Header</h1></div>", html);
+    }
+
+    @Test
+    @DisplayName("Unclosed component tags should throw an explicit IllegalArgumentException")
+    void testUnclosedTagParsingError() {
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            JssrComponent.processCustomTags("<Link href=\"/x\" label=\"X\"> BODY");
+        });
+        assertTrue(exception.getMessage().contains("Unclosed JSSR component tag <Link>"));
+    }
+
+    @Test
+    @DisplayName("Component recursion depth exceeding limit should throw an IllegalStateException instead of StackOverflowError")
+    void testRecursionLimitProtection() {
+        Exception exception = assertThrows(IllegalStateException.class, () -> {
+            new Self().render();
+        });
+        assertTrue(exception.getMessage().contains("recursion limit exceeded"));
+    }
+
+    @Test
+    @DisplayName("Unquoted URL attributes containing slashes like href=/users/42 should parse correctly")
+    void testUnquotedUrlParsing() {
+        String html = JssrComponent.processCustomTags("<Link href=/users/42 label=View />");
+        assertEquals("<a href=\"/users/42\">View</a>", html);
     }
 
     @Test

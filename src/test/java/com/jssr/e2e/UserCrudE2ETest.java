@@ -1,5 +1,8 @@
 package com.jssr.e2e;
 
+import com.jssr.core.JssrComponent;
+import com.jssr.core.RawHtml;
+import com.jssr.core.SafeUrl;
 import com.jssr.e2e.app.TestApplication;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -12,6 +15,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -92,7 +96,101 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("3. Live Search & Dynamic Filtering Tests")
+    @DisplayName("3. Architecture & Security Issue Prevention Tests")
+    class ArchitectureAndSecurityTests {
+
+        public record CustomCard(RawHtml children) implements JssrComponent {
+            @Override
+            public String template() {
+                return "<div class=\"custom-card\">${children}</div>";
+            }
+        }
+
+        public record DummyLink(String href, String label) implements JssrComponent {
+            @Override
+            public String template() {
+                return "<a href=\"${href}\">${label}</a>";
+            }
+        }
+
+        public record RecursiveComp() implements JssrComponent {
+            @Override
+            public String template() {
+                return "<RecursiveComp />";
+            }
+        }
+
+        @Test
+        @DisplayName("1. Parent to Child dynamic props should escape exactly ONCE and prevent double escaping (&amp;amp;)")
+        void testPreventDoubleEscaping() throws Exception {
+            mockMvc.perform(post("/users")
+                            .param("name", "Tom & Jerry")
+                            .param("email", "tom.jerry@jssr.dev")
+                            .param("role", "Developer")
+                            .param("status", "ACTIVE"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string(containsString("Tom &amp; Jerry")))
+                    .andExpect(content().string(not(containsString("Tom &amp;amp; Jerry"))));
+        }
+
+        @Test
+        @DisplayName("2. SafeUrl should sanitize javascript: XSS payloads to about:blank")
+        void testSanitizeUnsafeUrlProtocols() {
+            assertEquals("about:blank", SafeUrl.sanitize("javascript:alert(1)"));
+            assertEquals("about:blank", SafeUrl.sanitize("vbscript:msgbox(1)"));
+            assertEquals("about:blank", SafeUrl.sanitize("data:text/html,<script>alert(1)</script>"));
+            assertEquals("/users/42", SafeUrl.sanitize("/users/42"));
+        }
+
+        @Test
+        @DisplayName("3. Unknown JSX attribute typos (e.g. hreef) should throw an explicit IllegalArgumentException")
+        void testRejectUnknownAttributeTypos() {
+            JssrComponent.register("DummyLink", DummyLink.class);
+            Exception ex = assertThrows(IllegalArgumentException.class, () -> {
+                JssrComponent.processCustomTags("<DummyLink hreef=\"/users\" label=\"View\" />");
+            });
+            assertTrue(ex.getMessage().contains("Unknown attribute 'hreef' specified for JSSR component <DummyLink>"));
+        }
+
+        @Test
+        @DisplayName("4. Paired component tags (<CustomCard>BODY</CustomCard>) should pass inner content to children prop")
+        void testPairedComponentTags() {
+            JssrComponent.register("CustomCard", CustomCard.class);
+            String html = JssrComponent.processCustomTags("<CustomCard><h1>Title</h1></CustomCard>");
+            assertEquals("<div class=\"custom-card\"><h1>Title</h1></div>", html);
+        }
+
+        @Test
+        @DisplayName("5. Unclosed tags (<DummyLink ...>) should throw an explicit IllegalArgumentException")
+        void testUnclosedTagError() {
+            JssrComponent.register("DummyLink", DummyLink.class);
+            Exception ex = assertThrows(IllegalArgumentException.class, () -> {
+                JssrComponent.processCustomTags("<DummyLink href=\"/x\" label=\"X\"> Dangling Body");
+            });
+            assertTrue(ex.getMessage().contains("Unclosed JSSR component tag <DummyLink>"));
+        }
+
+        @Test
+        @DisplayName("6. Component infinite recursion should throw IllegalStateException depth limit error instead of StackOverflowError")
+        void testRecursionLimitProtection() {
+            JssrComponent.register("RecursiveComp", RecursiveComp.class);
+            Exception ex = assertThrows(IllegalStateException.class, () -> {
+                new RecursiveComp().render();
+            });
+            assertTrue(ex.getMessage().contains("recursion limit exceeded"));
+        }
+
+        @Test
+        @DisplayName("7. Unquoted URL attribute paths (href=/users/42) should parse completely")
+        void testUnquotedUrlAttributeParsing() {
+            JssrComponent.register("DummyLink", DummyLink.class);
+            String html = JssrComponent.processCustomTags("<DummyLink href=/users/42 label=View />");
+            assertEquals("<a href=\"/users/42\">View</a>", html);
+        }
+    }
+
+    @Nested
+    @DisplayName("4. Live Search & Dynamic Filtering Tests")
     class SearchAndFilterTests {
 
         @Test
@@ -128,7 +226,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("4. User Creation Flow Tests")
+    @DisplayName("5. User Creation Flow Tests")
     class UserCreationTests {
 
         @Test
@@ -149,7 +247,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("5. User Update Flow Tests")
+    @DisplayName("6. User Update Flow Tests")
     class UserUpdateTests {
 
         @Test
@@ -182,7 +280,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("6. User Status Toggle Flow Tests")
+    @DisplayName("7. User Status Toggle Flow Tests")
     class UserStatusToggleTests {
 
         @Test
@@ -203,7 +301,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("7. User Deletion Flow Tests")
+    @DisplayName("8. User Deletion Flow Tests")
     class UserDeletionTests {
 
         @Test

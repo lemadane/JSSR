@@ -18,6 +18,16 @@ public interface JssrComponent {
     Map<String, Class<? extends JssrComponent>> REGISTRY = new ConcurrentHashMap<>();
 
     /**
+     * ThreadLocal tracking rendering depth to prevent infinite component recursion.
+     */
+    ThreadLocal<Integer> RENDER_DEPTH = ThreadLocal.withInitial(() -> 0);
+
+    /**
+     * Maximum allowed component nesting depth before throwing a recursion error.
+     */
+    int MAX_RENDER_DEPTH = 100;
+
+    /**
      * Register a custom component tag.
      *
      * @param tagName Tag name (e.g. "UserCard")
@@ -36,18 +46,29 @@ public interface JssrComponent {
 
     /**
      * Primary entry point. Interpolates ${fieldName} variables, renders the template,
-     * and automatically processes custom tags.
+     * and automatically processes custom tags with depth recursion protection.
      *
      * @return Fully rendered HTML string with resolved variables and child tags
      */
     default String render() {
-        String rawHtml = template();
-        if (rawHtml == null || rawHtml.isBlank()) {
-            return rawHtml == null ? "" : rawHtml;
+        int depth = RENDER_DEPTH.get();
+        if (depth > MAX_RENDER_DEPTH) {
+            throw new IllegalStateException("JSSR component recursion limit exceeded (max depth " 
+                    + MAX_RENDER_DEPTH + ") for component: " + getClass().getSimpleName());
         }
 
-        String interpolatedHtml = interpolateVariables(this, rawHtml);
-        return processCustomTags(interpolatedHtml);
+        RENDER_DEPTH.set(depth + 1);
+        try {
+            String rawHtml = template();
+            if (rawHtml == null || rawHtml.isBlank()) {
+                return rawHtml == null ? "" : rawHtml;
+            }
+
+            String interpolatedHtml = interpolateVariables(this, rawHtml);
+            return processCustomTags(interpolatedHtml);
+        } finally {
+            RENDER_DEPTH.set(depth);
+        }
     }
 
     /**
@@ -93,6 +114,16 @@ public interface JssrComponent {
     }
 
     /**
+     * Sanitize a URL string to prevent dangerous javascript:, vbscript:, and data: protocols.
+     *
+     * @param url Input URL string
+     * @return Sanitized URL
+     */
+    static String sanitizeUrl(String url) {
+        return SafeUrl.sanitize(url);
+    }
+
+    /**
      * Interpolate ${fieldName} placeholders in HTML templates using Record field values.
      *
      * @param component The component instance
@@ -117,6 +148,8 @@ public interface JssrComponent {
                         valStr = "";
                     } else if (val instanceof RawHtml raw) {
                         valStr = raw.value() == null ? "" : raw.value();
+                    } else if (val instanceof SafeUrl safe) {
+                        valStr = safe.render();
                     } else if (val instanceof JssrComponent jc) {
                         valStr = jc.render();
                     } else {
@@ -189,16 +222,32 @@ public interface JssrComponent {
                             }
 
                             if (tagEnd != -1) {
-                                String attrString = html.substring(tagNameEnd, tagEnd).trim();
-                                if (attrString.endsWith("/")) {
-                                    attrString = attrString.substring(0, attrString.length() - 1).trim();
-                                }
+                                String rawTagContent = html.substring(tagNameEnd, tagEnd).trim();
+                                boolean isSelfClosing = rawTagContent.endsWith("/");
+                                String attrString = isSelfClosing 
+                                        ? rawTagContent.substring(0, rawTagContent.length() - 1).trim()
+                                        : rawTagContent;
 
                                 Class<? extends JssrComponent> clazz = REGISTRY.get(tagName);
                                 Map<String, String> attrs = parseAttributes(attrString);
+
+                                int nextIndex = tagEnd + 1;
+                                if (!isSelfClosing) {
+                                    String closingTag = "</" + tagName + ">";
+                                    int closingTagIndex = html.indexOf(closingTag, tagEnd + 1);
+                                    if (closingTagIndex == -1) {
+                                        throw new IllegalArgumentException("Unclosed JSSR component tag <" + tagName 
+                                                + ">. Expected self-closing tag <" + tagName + " ... /> or matching closing tag " + closingTag + ".");
+                                    }
+                                    String bodyContent = html.substring(tagEnd + 1, closingTagIndex);
+                                    attrs.put("children", bodyContent);
+                                    attrs.put("content", bodyContent);
+                                    nextIndex = closingTagIndex + closingTag.length();
+                                }
+
                                 String renderedChild = instantiateAndRender(clazz, attrs);
                                 sb.append(renderedChild);
-                                i = tagEnd + 1;
+                                i = nextIndex;
                                 continue;
                             }
                         }
@@ -263,7 +312,14 @@ public interface JssrComponent {
                         if (i < len) i++; // skip close quote
                     } else {
                         int valStart = i;
-                        while (i < len && !Character.isWhitespace(attrString.charAt(i)) && attrString.charAt(i) != '/' && attrString.charAt(i) != '>') {
+                        while (i < len) {
+                            char c = attrString.charAt(i);
+                            if (Character.isWhitespace(c) || c == '>') {
+                                break;
+                            }
+                            if (c == '/' && i + 1 < len && attrString.charAt(i + 1) == '>') {
+                                break;
+                            }
                             i++;
                         }
                         value = attrString.substring(valStart, i);
@@ -279,6 +335,18 @@ public interface JssrComponent {
         try {
             if (clazz.isRecord()) {
                 RecordComponent[] recordComponents = clazz.getRecordComponents();
+                Set<String> validNames = new HashSet<>();
+                for (RecordComponent rc : recordComponents) {
+                    validNames.add(rc.getName());
+                }
+
+                for (String attrName : attrs.keySet()) {
+                    if (!validNames.contains(attrName) && !"children".equals(attrName) && !"content".equals(attrName)) {
+                        throw new IllegalArgumentException("Unknown attribute '" + attrName 
+                                + "' specified for JSSR component <" + clazz.getSimpleName() + ">");
+                    }
+                }
+
                 Object[] args = new Object[recordComponents.length];
                 Class<?>[] paramTypes = new Class<?>[recordComponents.length];
 
@@ -304,6 +372,7 @@ public interface JssrComponent {
                 throw new IllegalStateException("Non-record component <" + clazz.getSimpleName() + "> must be a Record or have a no-arg constructor.");
             }
         } catch (Exception e) {
+            if (e instanceof RuntimeException re) throw re;
             throw new RuntimeException("Error rendering JSSR component tag <" + clazz.getSimpleName() + ">: " + e.getMessage(), e);
         }
     }
@@ -324,6 +393,12 @@ public interface JssrComponent {
 
         if (targetType == String.class || targetType == Object.class) {
             return unescapeHtml(rawVal);
+        }
+        if (targetType == RawHtml.class) {
+            return RawHtml.of(unescapeHtml(rawVal));
+        }
+        if (targetType == SafeUrl.class) {
+            return SafeUrl.of(unescapeHtml(rawVal));
         }
         if (targetType == Double.class || targetType == double.class) {
             return rawVal.isEmpty() ? 0.0d : Double.parseDouble(rawVal);
