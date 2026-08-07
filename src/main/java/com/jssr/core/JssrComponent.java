@@ -4,8 +4,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Core interface for Record-based Java Server-Side Rendering (JSSR) components.
@@ -52,6 +50,31 @@ public interface JssrComponent {
     }
 
     /**
+     * Escape special HTML characters to prevent XSS.
+     *
+     * @param input Raw text input
+     * @return HTML-escaped text
+     */
+    static String escapeHtml(String input) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(input.length() + 16);
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            switch (c) {
+                case '&' -> sb.append("&amp;");
+                case '<' -> sb.append("&lt;");
+                case '>' -> sb.append("&gt;");
+                case '"' -> sb.append("&quot;");
+                case '\'' -> sb.append("&#39;");
+                default -> sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * Interpolate ${fieldName} placeholders in HTML templates using Record field values.
      *
      * @param component The component instance
@@ -69,10 +92,19 @@ public interface JssrComponent {
             for (RecordComponent rc : recordComponents) {
                 try {
                     Object val = rc.getAccessor().invoke(component);
-                    String valStr = val == null ? "" : val.toString();
+                    String valStr;
+                    if (val == null) {
+                        valStr = "";
+                    } else if (val instanceof JssrComponent jc) {
+                        valStr = jc.render();
+                    } else {
+                        valStr = escapeHtml(val.toString());
+                    }
                     String placeholder = "${" + rc.getName() + "}";
                     html = html.replace(placeholder, valStr);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    throw new RuntimeException("JSSR render error: Unable to read property '"
+                            + rc.getName() + "' from component " + clazz.getSimpleName(), e);
                 }
             }
         }
@@ -80,7 +112,7 @@ public interface JssrComponent {
     }
 
     /**
-     * Process custom JSX-like child tags inside rendered HTML strings.
+     * Process custom JSX-like child tags inside rendered HTML strings using a quote-aware state machine parser.
      *
      * @param html HTML input string containing custom tags
      * @return Rendered HTML string with custom tags replaced by component HTML
@@ -90,22 +122,72 @@ public interface JssrComponent {
             return html == null ? "" : html;
         }
 
-        Pattern pattern = Pattern.compile("<([A-Z][a-zA-Z0-9]*)\\s*([^/>]*)/?>");
-        Matcher matcher = pattern.matcher(html);
-
         StringBuilder sb = new StringBuilder();
-        while (matcher.find()) {
-            String tagName = matcher.group(1);
-            String attrString = matcher.group(2);
+        int len = html.length();
+        int i = 0;
 
-            if (REGISTRY.containsKey(tagName)) {
-                Class<? extends JssrComponent> clazz = REGISTRY.get(tagName);
-                Map<String, String> attrs = parseAttributes(attrString);
-                String renderedChild = instantiateAndRender(clazz, attrs);
-                matcher.appendReplacement(sb, Matcher.quoteReplacement(renderedChild));
+        while (i < len) {
+            int openBracket = html.indexOf('<', i);
+            if (openBracket == -1) {
+                sb.append(html.substring(i));
+                break;
             }
+
+            sb.append(html, i, openBracket);
+            i = openBracket;
+
+            int tagStart = openBracket + 1;
+            if (tagStart < len && Character.isUpperCase(html.charAt(tagStart))) {
+                int tagNameEnd = tagStart;
+                while (tagNameEnd < len && Character.isLetterOrDigit(html.charAt(tagNameEnd))) {
+                    tagNameEnd++;
+                }
+
+                String tagName = html.substring(tagStart, tagNameEnd);
+                if (tagNameEnd < len) {
+                    char delim = html.charAt(tagNameEnd);
+                    if (delim == ' ' || delim == '\t' || delim == '\n' || delim == '\r' || delim == '/' || delim == '>') {
+                        if (REGISTRY.containsKey(tagName)) {
+                            int tagEnd = -1;
+                            char inQuote = 0;
+                            for (int j = tagNameEnd; j < len; j++) {
+                                char c = html.charAt(j);
+                                if (inQuote != 0) {
+                                    if (c == inQuote) {
+                                        inQuote = 0;
+                                    }
+                                } else {
+                                    if (c == '"' || c == '\'') {
+                                        inQuote = c;
+                                    } else if (c == '>') {
+                                        tagEnd = j;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (tagEnd != -1) {
+                                String attrString = html.substring(tagNameEnd, tagEnd).trim();
+                                if (attrString.endsWith("/")) {
+                                    attrString = attrString.substring(0, attrString.length() - 1).trim();
+                                }
+
+                                Class<? extends JssrComponent> clazz = REGISTRY.get(tagName);
+                                Map<String, String> attrs = parseAttributes(attrString);
+                                String renderedChild = instantiateAndRender(clazz, attrs);
+                                sb.append(renderedChild);
+                                i = tagEnd + 1;
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            sb.append('<');
+            i++;
         }
-        matcher.appendTail(sb);
+
         return sb.toString();
     }
 
@@ -114,10 +196,59 @@ public interface JssrComponent {
         if (attrString == null || attrString.isBlank()) {
             return attrs;
         }
-        Pattern attrPattern = Pattern.compile("([a-zA-Z0-9-]+)=\"([^\"]*)\"");
-        Matcher matcher = attrPattern.matcher(attrString);
-        while (matcher.find()) {
-            attrs.put(matcher.group(1), matcher.group(2));
+
+        int len = attrString.length();
+        int i = 0;
+        while (i < len) {
+            while (i < len && Character.isWhitespace(attrString.charAt(i))) {
+                i++;
+            }
+            if (i >= len) break;
+
+            int nameStart = i;
+            while (i < len) {
+                char c = attrString.charAt(i);
+                if (Character.isWhitespace(c) || c == '=' || c == '/' || c == '>') {
+                    break;
+                }
+                i++;
+            }
+            if (i == nameStart) {
+                i++;
+                continue;
+            }
+            String name = attrString.substring(nameStart, i);
+
+            while (i < len && Character.isWhitespace(attrString.charAt(i))) {
+                i++;
+            }
+
+            String value = "true";
+            if (i < len && attrString.charAt(i) == '=') {
+                i++; // skip '='
+                while (i < len && Character.isWhitespace(attrString.charAt(i))) {
+                    i++;
+                }
+                if (i < len) {
+                    char quote = attrString.charAt(i);
+                    if (quote == '"' || quote == '\'') {
+                        i++; // skip open quote
+                        int valStart = i;
+                        while (i < len && attrString.charAt(i) != quote) {
+                            i++;
+                        }
+                        value = attrString.substring(valStart, Math.min(i, len));
+                        if (i < len) i++; // skip close quote
+                    } else {
+                        int valStart = i;
+                        while (i < len && !Character.isWhitespace(attrString.charAt(i)) && attrString.charAt(i) != '/' && attrString.charAt(i) != '>') {
+                            i++;
+                        }
+                        value = attrString.substring(valStart, i);
+                    }
+                }
+            }
+            attrs.put(name, value);
         }
         return attrs;
     }
@@ -159,18 +290,37 @@ public interface JssrComponent {
             if (targetType == boolean.class) return false;
             if (targetType == int.class) return 0;
             if (targetType == long.class) return 0L;
-            if (targetType == double.class) return 0.0;
+            if (targetType == double.class) return 0.0d;
+            if (targetType == float.class) return 0.0f;
+            if (targetType == short.class) return (short) 0;
+            if (targetType == byte.class) return (byte) 0;
+            if (targetType == char.class) return '\0';
             return null;
         }
 
         if (targetType == String.class || targetType == Object.class) {
             return rawVal;
         }
+        if (targetType == Double.class || targetType == double.class) {
+            return rawVal.isEmpty() ? 0.0d : Double.parseDouble(rawVal);
+        }
+        if (targetType == Float.class || targetType == float.class) {
+            return rawVal.isEmpty() ? 0.0f : Float.parseFloat(rawVal);
+        }
         if (targetType == Long.class || targetType == long.class) {
             return rawVal.isEmpty() ? 0L : Long.parseLong(rawVal);
         }
         if (targetType == Integer.class || targetType == int.class) {
             return rawVal.isEmpty() ? 0 : Integer.parseInt(rawVal);
+        }
+        if (targetType == Short.class || targetType == short.class) {
+            return rawVal.isEmpty() ? (short) 0 : Short.parseShort(rawVal);
+        }
+        if (targetType == Byte.class || targetType == byte.class) {
+            return rawVal.isEmpty() ? (byte) 0 : Byte.parseByte(rawVal);
+        }
+        if (targetType == Character.class || targetType == char.class) {
+            return rawVal.isEmpty() ? '\0' : rawVal.charAt(0);
         }
         if (targetType == Boolean.class || targetType == boolean.class) {
             return Boolean.parseBoolean(rawVal);

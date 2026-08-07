@@ -13,7 +13,7 @@ import java.util.List;
 public class JssrMvcConfig implements WebMvcConfigurer {
 
     @Override
-    public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
+    public void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
         converters.add(0, new JssrConverter());
     }
 }
