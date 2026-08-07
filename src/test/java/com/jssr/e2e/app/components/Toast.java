@@ -46,13 +46,13 @@ public record Toast(String message, String type) implements JssrComponent {
                  x-transition:leave-end="opacity-0 translate-y-2 scale-95"
                  class="fixed bottom-6 right-6 z-50 flex items-center px-4 py-3 text-white text-sm font-medium rounded-xl shadow-2xl border %s">
                 %s
-                <span>%s</span>
+                <span>${message}</span>
                 <button @click="show = false" class="ml-4 text-white/80 hover:text-white focus:outline-none">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
             </div>
-            """.formatted(bgClass, icon, message);
+            """.formatted(bgClass, icon);
     }
 }

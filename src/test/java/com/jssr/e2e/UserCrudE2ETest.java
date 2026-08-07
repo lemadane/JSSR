@@ -24,7 +24,7 @@ class UserCrudE2ETest {
     private MockMvc mockMvc;
 
     @Nested
-    @DisplayName("1. Page & Layout Rendering Tests")
+    @DisplayName("1. Page & Layout SSR Rendering Tests")
     class PageRenderingTests {
 
         @Test
@@ -47,7 +47,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("GET /users should render isolated HTMX list container fragment")
+        @DisplayName("GET /users should render isolated HTMX list container fragment without outer document shell")
         void testGetUsersPartial() throws Exception {
             mockMvc.perform(get("/users"))
                     .andExpect(status().isOk())
@@ -61,11 +61,11 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("2. UserForm Component Rendering Tests")
+    @DisplayName("2. UserForm Component Rendering & Props Tests")
     class UserFormComponentTests {
 
         @Test
-        @DisplayName("GET /users/new should render JSSR UserForm component for creation with clean defaults")
+        @DisplayName("GET /users/new should render JSSR UserForm creation modal with clean default parameters")
         void testRenderNewUserForm() throws Exception {
             mockMvc.perform(get("/users/new"))
                     .andExpect(status().isOk())
@@ -77,7 +77,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("GET /users/1/edit should render JSSR UserForm component pre-filled with user record attributes using variable interpolation")
+        @DisplayName("GET /users/1/edit should render JSSR UserForm edit modal pre-filled via ${fieldName} interpolation without double escaping")
         void testRenderEditUserForm() throws Exception {
             mockMvc.perform(get("/users/1/edit"))
                     .andExpect(status().isOk())
@@ -92,11 +92,11 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("3. Live Search & Filtering Tests")
+    @DisplayName("3. Live Search & Dynamic Filtering Tests")
     class SearchAndFilterTests {
 
         @Test
-        @DisplayName("GET /users/search?q=Sarah should return only matching user name")
+        @DisplayName("GET /users/search?q=Sarah should return matching user and exclude non-matching users")
         void testSearchByName() throws Exception {
             mockMvc.perform(get("/users/search").param("q", "Sarah"))
                     .andExpect(status().isOk())
@@ -107,7 +107,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("GET /users/search?q=Designer should filter by user role")
+        @DisplayName("GET /users/search?q=Designer should filter by user role attribute")
         void testSearchByRole() throws Exception {
             mockMvc.perform(get("/users/search").param("q", "Designer"))
                     .andExpect(status().isOk())
@@ -118,7 +118,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("GET /users/search?q=nonexistent query should render clean empty state message")
+        @DisplayName("GET /users/search?q=nonexistent query should render clean empty state fallback message")
         void testSearchEmptyResults() throws Exception {
             mockMvc.perform(get("/users/search").param("q", "NonExistentUser999"))
                     .andExpect(status().isOk())
@@ -128,42 +128,44 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("4. User Creation Tests")
+    @DisplayName("4. User Creation Flow Tests")
     class UserCreationTests {
 
         @Test
-        @DisplayName("POST /users with valid inputs should create user, update stats, and render success Toast")
+        @DisplayName("POST /users with valid parameters should save user entity, update statistics, and return Toast alert with single-escaped text")
         void testCreateUserSuccess() throws Exception {
             mockMvc.perform(post("/users")
-                            .param("name", "Diana Prince")
+                            .param("name", "Diana & Prince")
                             .param("email", "diana.prince@jssr.dev")
                             .param("role", "Admin")
                             .param("status", "ACTIVE"))
                     .andExpect(status().isOk())
-                    .andExpect(content().string(containsString("Diana Prince")))
+                    .andExpect(content().string(containsString("Diana &amp; Prince")))
+                    .andExpect(content().string(not(containsString("Diana &amp;amp; Prince"))))
                     .andExpect(content().string(containsString("diana.prince@jssr.dev")))
-                    .andExpect(content().string(containsString("User 'Diana Prince' created successfully!")))
+                    .andExpect(content().string(containsString("User &#39;Diana &amp; Prince&#39; created successfully!")))
                     .andExpect(content().string(containsString("Showing 6 users")));
         }
     }
 
     @Nested
-    @DisplayName("5. User Update Tests")
+    @DisplayName("5. User Update Flow Tests")
     class UserUpdateTests {
 
         @Test
-        @DisplayName("POST /users/{id} should update user attributes and display success Toast")
+        @DisplayName("POST /users/{id} should update user fields and return updated component fragment with single HTML escaping")
         void testUpdateUserSuccess() throws Exception {
             mockMvc.perform(post("/users/2")
-                            .param("name", "Alex Mercer Revised")
-                            .param("email", "alex.revised@jssr.dev")
+                            .param("name", "Tom & Jerry")
+                            .param("email", "tom.jerry@jssr.dev")
                             .param("role", "Product Lead")
                             .param("status", "ACTIVE"))
                     .andExpect(status().isOk())
-                    .andExpect(content().string(containsString("Alex Mercer Revised")))
-                    .andExpect(content().string(containsString("alex.revised@jssr.dev")))
+                    .andExpect(content().string(containsString("Tom &amp; Jerry")))
+                    .andExpect(content().string(not(containsString("Tom &amp;amp; Jerry"))))
+                    .andExpect(content().string(containsString("tom.jerry@jssr.dev")))
                     .andExpect(content().string(containsString("Product Lead")))
-                    .andExpect(content().string(containsString("User 'Alex Mercer Revised' updated successfully!")));
+                    .andExpect(content().string(containsString("User &#39;Tom &amp; Jerry&#39; updated successfully!")));
         }
 
         @Test
@@ -180,7 +182,7 @@ class UserCrudE2ETest {
     }
 
     @Nested
-    @DisplayName("6. User Status Toggle Tests")
+    @DisplayName("6. User Status Toggle Flow Tests")
     class UserStatusToggleTests {
 
         @Test
@@ -188,7 +190,7 @@ class UserCrudE2ETest {
         void testToggleUserStatusInactiveToActive() throws Exception {
             mockMvc.perform(post("/users/3/toggle"))
                     .andExpect(status().isOk())
-                    .andExpect(content().string(containsString("Status for 'Elena Rostova' changed to ACTIVE")));
+                    .andExpect(content().string(containsString("Status for &#39;Elena Rostova&#39; changed to ACTIVE")));
         }
 
         @Test
@@ -196,21 +198,21 @@ class UserCrudE2ETest {
         void testToggleUserStatusActiveToInactive() throws Exception {
             mockMvc.perform(post("/users/1/toggle"))
                     .andExpect(status().isOk())
-                    .andExpect(content().string(containsString("Status for 'Sarah Connor' changed to INACTIVE")));
+                    .andExpect(content().string(containsString("Status for &#39;Sarah Connor&#39; changed to INACTIVE")));
         }
     }
 
     @Nested
-    @DisplayName("7. User Deletion Tests")
+    @DisplayName("7. User Deletion Flow Tests")
     class UserDeletionTests {
 
         @Test
-        @DisplayName("DELETE /users/{id} should remove user from system and decrement user count")
+        @DisplayName("DELETE /users/{id} should remove user entity from system and decrement total count")
         void testDeleteUserSuccess() throws Exception {
             mockMvc.perform(delete("/users/2"))
                     .andExpect(status().isOk())
                     .andExpect(content().string(not(containsString("alex.mercer@jssr.dev"))))
-                    .andExpect(content().string(containsString("User 'Alex Mercer' removed from system.")))
+                    .andExpect(content().string(containsString("User &#39;Alex Mercer&#39; removed from system.")))
                     .andExpect(content().string(containsString("Showing 4 users")));
         }
 
@@ -219,7 +221,7 @@ class UserCrudE2ETest {
         void testDeleteUserNotFound() throws Exception {
             mockMvc.perform(delete("/users/999999"))
                     .andExpect(status().isOk())
-                    .andExpect(content().string(containsString("User 'User' removed from system.")));
+                    .andExpect(content().string(containsString("User &#39;User&#39; removed from system.")));
         }
     }
 }

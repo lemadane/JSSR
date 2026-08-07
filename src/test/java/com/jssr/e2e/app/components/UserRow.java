@@ -35,6 +35,12 @@ public record UserRow(
             default -> "bg-sky-500/10 text-sky-400 border-sky-500/20";
         };
 
+        String escapedJsName = escapeJs(name);
+        String escapedJsEmail = escapeJs(email);
+        String escapedJsRole = escapeJs(role);
+        String escapedJsStatus = escapeJs(status);
+        String dotStatusClass = isActive ? "bg-emerald-400" : "bg-slate-500";
+
         return """
             <tr id="user-row-%d" class="hover:bg-slate-700/30 transition duration-150 group border-b border-slate-700/40">
                 <!-- User Info & Avatar -->
@@ -44,21 +50,21 @@ public record UserRow(
                             %s
                         </div>
                         <div>
-                            <div class="font-semibold text-slate-100 group-hover:text-indigo-300 transition duration-150">%s</div>
-                            <div class="text-xs text-slate-400">ID: #%d • Joined %s</div>
+                            <div class="font-semibold text-slate-100 group-hover:text-indigo-300 transition duration-150">${name}</div>
+                            <div class="text-xs text-slate-400">ID: #${id} • Joined ${createdAt}</div>
                         </div>
                     </div>
                 </td>
 
                 <!-- Email -->
                 <td class="py-4 px-6 text-sm text-slate-300 font-mono">
-                    %s
+                    ${email}
                 </td>
 
                 <!-- Role Badge -->
                 <td class="py-4 px-6">
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border %s">
-                        %s
+                        ${role}
                     </span>
                 </td>
 
@@ -70,7 +76,7 @@ public record UserRow(
                             title="Click to toggle status"
                             class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border transition duration-200 hover:scale-105 cursor-pointer %s">
                         <span class="w-1.5 h-1.5 rounded-full mr-1.5 %s"></span>
-                        %s
+                        ${status}
                     </button>
                 </td>
 
@@ -101,23 +107,17 @@ public record UserRow(
             """.formatted(
                 id,
                 initials,
-                escapeHtml(name),
-                id,
-                escapeHtml(createdAt),
-                escapeHtml(email),
                 roleBadgeClass,
-                escapeHtml(role),
                 id,
                 statusBadgeClass,
-                isActive ? "bg-emerald-400" : "bg-slate-500",
-                status,
+                dotStatusClass,
                 id,
-                escapeJs(name),
-                escapeJs(email),
-                escapeJs(role),
-                escapeJs(status),
+                escapedJsName,
+                escapedJsEmail,
+                escapedJsRole,
+                escapedJsStatus,
                 id,
-                escapeJs(name)
+                escapedJsName
             );
     }
 
@@ -126,11 +126,6 @@ public record UserRow(
         String[] parts = name.trim().split("\\s+");
         if (parts.length == 1) return parts[0].substring(0, Math.min(2, parts[0].length())).toUpperCase();
         return (parts[0].substring(0, 1) + parts[parts.length - 1].substring(0, 1)).toUpperCase();
-    }
-
-    private String escapeHtml(String str) {
-        if (str == null) return "";
-        return str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private String escapeJs(String str) {

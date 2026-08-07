@@ -1,6 +1,7 @@
 package com.jssr.core;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +76,23 @@ public interface JssrComponent {
     }
 
     /**
+     * Unescape standard HTML entities (&amp;, &lt;, &gt;, &quot;, &#39;) to raw text.
+     *
+     * @param input HTML-escaped text input
+     * @return Unescaped text
+     */
+    static String unescapeHtml(String input) {
+        if (input == null || input.isEmpty() || !input.contains("&")) {
+            return input == null ? "" : input;
+        }
+        return input.replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&#39;", "'");
+    }
+
+    /**
      * Interpolate ${fieldName} placeholders in HTML templates using Record field values.
      *
      * @param component The component instance
@@ -91,10 +109,14 @@ public interface JssrComponent {
             RecordComponent[] recordComponents = clazz.getRecordComponents();
             for (RecordComponent rc : recordComponents) {
                 try {
-                    Object val = rc.getAccessor().invoke(component);
+                    Method accessor = rc.getAccessor();
+                    accessor.setAccessible(true);
+                    Object val = accessor.invoke(component);
                     String valStr;
                     if (val == null) {
                         valStr = "";
+                    } else if (val instanceof RawHtml raw) {
+                        valStr = raw.value() == null ? "" : raw.value();
                     } else if (val instanceof JssrComponent jc) {
                         valStr = jc.render();
                     } else {
@@ -268,11 +290,13 @@ public interface JssrComponent {
                 }
 
                 Constructor<? extends JssrComponent> ctor = clazz.getDeclaredConstructor(paramTypes);
+                ctor.setAccessible(true);
                 JssrComponent instance = ctor.newInstance(args);
                 return instance.render();
             } else {
                 Constructor<?>[] ctors = clazz.getConstructors();
                 Constructor<?> ctor = ctors[0];
+                ctor.setAccessible(true);
                 if (ctor.getParameterCount() == 0) {
                     JssrComponent instance = (JssrComponent) ctor.newInstance();
                     return instance.render();
@@ -299,7 +323,7 @@ public interface JssrComponent {
         }
 
         if (targetType == String.class || targetType == Object.class) {
-            return rawVal;
+            return unescapeHtml(rawVal);
         }
         if (targetType == Double.class || targetType == double.class) {
             return rawVal.isEmpty() ? 0.0d : Double.parseDouble(rawVal);
@@ -320,15 +344,34 @@ public interface JssrComponent {
             return rawVal.isEmpty() ? (byte) 0 : Byte.parseByte(rawVal);
         }
         if (targetType == Character.class || targetType == char.class) {
-            return rawVal.isEmpty() ? '\0' : rawVal.charAt(0);
+            return rawVal.isEmpty() ? '\0' : unescapeHtml(rawVal).charAt(0);
         }
         if (targetType == Boolean.class || targetType == boolean.class) {
             return Boolean.parseBoolean(rawVal);
         }
         if (targetType.isEnum()) {
-            return Enum.valueOf((Class<Enum>) targetType, rawVal.toUpperCase());
+            return parseEnum(targetType, rawVal);
         }
 
         return rawVal;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Object parseEnum(Class<?> targetType, String rawVal) {
+        Class<Enum> enumType = (Class<Enum>) targetType;
+        try {
+            return Enum.valueOf(enumType, rawVal);
+        } catch (IllegalArgumentException e1) {
+            try {
+                return Enum.valueOf(enumType, rawVal.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e2) {
+                for (Enum constant : enumType.getEnumConstants()) {
+                    if (constant.name().equalsIgnoreCase(rawVal)) {
+                        return constant;
+                    }
+                }
+                throw e1;
+            }
+        }
     }
 }

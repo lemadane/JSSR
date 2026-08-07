@@ -13,6 +13,11 @@ class ComponentTest {
         INACTIVE
     }
 
+    public enum MixedStatus {
+        InProgress,
+        Completed
+    }
+
     public record UserPage(String username) implements JssrComponent {
         @Override
         public String template() {
@@ -36,21 +41,42 @@ class ComponentTest {
     public record Link(String href, String label) implements JssrComponent {
         @Override
         public String template() {
-            return "<a href=\"" + href + "\">" + label + "</a>";
+            return "<a href=\"${href}\">${label}</a>";
+        }
+    }
+
+    public record Parent(String href, String label) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<Link href=\"${href}\" label=\"${label}\" />";
         }
     }
 
     public record HtmxButton(String hxGet, String label) implements JssrComponent {
         @Override
         public String template() {
-            return "<button hx-get=\"" + hxGet + "\">" + label + "</button>";
+            return "<button hx-get=\"${hxGet}\">${label}</button>";
         }
     }
 
     public record ApiButton(String endpoint) implements JssrComponent {
         @Override
         public String template() {
-            return "<button data-endpoint=\"" + endpoint + "\">Call API</button>";
+            return "<button data-endpoint=\"${endpoint}\">Call API</button>";
+        }
+    }
+
+    public record TaskItem(MixedStatus status) implements JssrComponent {
+        @Override
+        public String template() {
+            return "status=${status}";
+        }
+    }
+
+    record PackagePrivateCard(String title) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div class=\"card\">${title}</div>";
         }
     }
 
@@ -130,26 +156,18 @@ class ComponentTest {
         }
     }
 
-    public record ComponentWithAccessorFailure(String throwProp) implements JssrComponent {
-        public String getThrowProp() {
-            throw new UnsupportedOperationException("Simulated property error");
-        }
-
-        @Override
-        public String template() {
-            return "<div>${throwProp}</div>";
-        }
-    }
-
     @BeforeEach
     void setUp() {
         JssrComponent.REGISTRY.clear();
         JssrComponent.register("Link", Link.class);
+        JssrComponent.register("Parent", Parent.class);
         JssrComponent.register("HtmxButton", HtmxButton.class);
         JssrComponent.register("ApiButton", ApiButton.class);
         JssrComponent.register("ScalarProps", ScalarProps.class);
         JssrComponent.register("Badge", Badge.class);
         JssrComponent.register("TestDefaults", TestDefaults.class);
+        JssrComponent.register("TaskItem", TaskItem.class);
+        JssrComponent.register("PackagePrivateCard", PackagePrivateCard.class);
     }
 
     @Test
@@ -160,6 +178,33 @@ class ComponentTest {
 
         UserPage specialChars = new UserPage("Fish & Chips <Salt> \"Pepper\" 'Vinegar'");
         assertEquals("<h1>Fish &amp; Chips &lt;Salt&gt; &quot;Pepper&quot; &#39;Vinegar&#39;</h1>", specialChars.render());
+    }
+
+    @Test
+    @DisplayName("Parent-to-child dynamic props containing HTML entities or & should NOT be double-escaped")
+    void testParentToChildPropsNoDoubleEscaping() {
+        Parent parent = new Parent("/users?a=1&b=2", "Tom & Jerry");
+        String html = parent.render();
+
+        assertEquals("<a href=\"/users?a=1&amp;b=2\">Tom &amp; Jerry</a>", html);
+        assertFalse(html.contains("&amp;amp;"));
+    }
+
+    @Test
+    @DisplayName("Mixed-case enum constants like InProgress or Completed should convert correctly")
+    void testMixedCaseEnumParsing() {
+        TaskItem task = new TaskItem(MixedStatus.InProgress);
+        assertEquals("status=InProgress", task.render());
+
+        String html = JssrComponent.processCustomTags("<TaskItem status=\"InProgress\" />");
+        assertEquals("status=InProgress", html);
+    }
+
+    @Test
+    @DisplayName("Package-private component records should be accessible and render properly")
+    void testPackagePrivateComponentAccess() {
+        String html = JssrComponent.processCustomTags("<PackagePrivateCard title=\"Secret Card\" />");
+        assertEquals("<div class=\"card\">Secret Card</div>", html);
     }
 
     @Test
