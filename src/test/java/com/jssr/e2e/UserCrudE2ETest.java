@@ -106,10 +106,21 @@ class UserCrudE2ETest {
             }
         }
 
-        public record DummyLink(String href, String label) implements JssrComponent {
+        public record DummyLink(SafeUrl href, String label) implements JssrComponent {
             @Override
             public String template() {
                 return "<a href=\"${href}\">${label}</a>";
+            }
+        }
+
+        public record PageWithCard(String username) implements JssrComponent {
+            @Override
+            public String template() {
+                return """
+                    <CustomCard>
+                        <p>${username}</p>
+                    </CustomCard>
+                    """;
             }
         }
 
@@ -134,16 +145,41 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("2. SafeUrl should sanitize javascript: XSS payloads to about:blank")
+        @DisplayName("2. SafeUrl should sanitize javascript: XSS payloads to about:blank and HTML escape attributes")
         void testSanitizeUnsafeUrlProtocols() {
             assertEquals("about:blank", SafeUrl.sanitize("javascript:alert(1)"));
+            assertEquals("about:blank", SafeUrl.sanitize("java&#115;cript:alert(1)"));
             assertEquals("about:blank", SafeUrl.sanitize("vbscript:msgbox(1)"));
             assertEquals("about:blank", SafeUrl.sanitize("data:text/html,<script>alert(1)</script>"));
             assertEquals("/users/42", SafeUrl.sanitize("/users/42"));
+
+            DummyLink link = new DummyLink(SafeUrl.of("https://example.com/\" onmouseover=\"alert(1)"), "Click");
+            String html = link.render();
+            assertTrue(html.contains("href=\"https://example.com/&quot; onmouseover=&quot;alert(1)\""));
+            assertFalse(html.contains("\" onmouseover=\""));
         }
 
         @Test
-        @DisplayName("3. Unknown JSX attribute typos (e.g. hreef) should throw an explicit IllegalArgumentException")
+        @DisplayName("3. Paired RawHtml children should preserve pre-escaped user data without re-activating XSS tags")
+        void testPairedRawHtmlChildrenXssPreservation() {
+            JssrComponent.register("CustomCard", CustomCard.class);
+            PageWithCard page = new PageWithCard("<img src=x onerror=alert(1)>");
+            String html = page.render();
+
+            assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+            assertFalse(html.contains("<img src=x onerror=alert(1)>"));
+        }
+
+        @Test
+        @DisplayName("4. Nested same-type paired components like <CustomCard><CustomCard>Inner</CustomCard></CustomCard> should match nesting levels correctly")
+        void testNestedSameTypePairedComponents() {
+            JssrComponent.register("CustomCard", CustomCard.class);
+            String html = JssrComponent.processCustomTags("<CustomCard><CustomCard>Inner</CustomCard></CustomCard>");
+            assertEquals("<div class=\"custom-card\"><div class=\"custom-card\">Inner</div></div>", html);
+        }
+
+        @Test
+        @DisplayName("5. Unknown JSX attribute typos (e.g. hreef) should throw an explicit IllegalArgumentException")
         void testRejectUnknownAttributeTypos() {
             JssrComponent.register("DummyLink", DummyLink.class);
             Exception ex = assertThrows(IllegalArgumentException.class, () -> {
@@ -153,15 +189,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("4. Paired component tags (<CustomCard>BODY</CustomCard>) should pass inner content to children prop")
-        void testPairedComponentTags() {
-            JssrComponent.register("CustomCard", CustomCard.class);
-            String html = JssrComponent.processCustomTags("<CustomCard><h1>Title</h1></CustomCard>");
-            assertEquals("<div class=\"custom-card\"><h1>Title</h1></div>", html);
-        }
-
-        @Test
-        @DisplayName("5. Unclosed tags (<DummyLink ...>) should throw an explicit IllegalArgumentException")
+        @DisplayName("6. Unclosed tags (<DummyLink ...>) should throw an explicit IllegalArgumentException")
         void testUnclosedTagError() {
             JssrComponent.register("DummyLink", DummyLink.class);
             Exception ex = assertThrows(IllegalArgumentException.class, () -> {
@@ -171,7 +199,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("6. Component infinite recursion should throw IllegalStateException depth limit error instead of StackOverflowError")
+        @DisplayName("7. Component infinite recursion should throw IllegalStateException depth limit error instead of StackOverflowError")
         void testRecursionLimitProtection() {
             JssrComponent.register("RecursiveComp", RecursiveComp.class);
             Exception ex = assertThrows(IllegalStateException.class, () -> {
@@ -181,7 +209,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("7. Unquoted URL attribute paths (href=/users/42) should parse completely")
+        @DisplayName("8. Unquoted URL attribute paths (href=/users/42) should parse completely")
         void testUnquotedUrlAttributeParsing() {
             JssrComponent.register("DummyLink", DummyLink.class);
             String html = JssrComponent.processCustomTags("<DummyLink href=/users/42 label=View />");

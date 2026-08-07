@@ -114,7 +114,7 @@ public interface JssrComponent {
     }
 
     /**
-     * Sanitize a URL string to prevent dangerous javascript:, vbscript:, and data: protocols.
+     * Sanitize a URL string to prevent dangerous protocols like javascript:, vbscript:, and data:.
      *
      * @param url Input URL string
      * @return Sanitized URL
@@ -149,7 +149,7 @@ public interface JssrComponent {
                     } else if (val instanceof RawHtml raw) {
                         valStr = raw.value() == null ? "" : raw.value();
                     } else if (val instanceof SafeUrl safe) {
-                        valStr = safe.render();
+                        valStr = escapeHtml(safe.render());
                     } else if (val instanceof JssrComponent jc) {
                         valStr = jc.render();
                     } else {
@@ -167,7 +167,8 @@ public interface JssrComponent {
     }
 
     /**
-     * Process custom JSX-like child tags inside rendered HTML strings using a quote-aware state machine parser.
+     * Process custom JSX-like child tags inside rendered HTML strings using a quote-aware state machine parser
+     * with nesting depth tracking for paired tags.
      *
      * @param html HTML input string containing custom tags
      * @return Rendered HTML string with custom tags replaced by component HTML
@@ -233,16 +234,15 @@ public interface JssrComponent {
 
                                 int nextIndex = tagEnd + 1;
                                 if (!isSelfClosing) {
-                                    String closingTag = "</" + tagName + ">";
-                                    int closingTagIndex = html.indexOf(closingTag, tagEnd + 1);
-                                    if (closingTagIndex == -1) {
+                                    int matchingClose = findMatchingClosingTagIndex(html, tagEnd + 1, tagName);
+                                    if (matchingClose == -1) {
                                         throw new IllegalArgumentException("Unclosed JSSR component tag <" + tagName 
-                                                + ">. Expected self-closing tag <" + tagName + " ... /> or matching closing tag " + closingTag + ".");
+                                                + ">. Expected self-closing tag <" + tagName + " ... /> or matching closing tag </" + tagName + ">.");
                                     }
-                                    String bodyContent = html.substring(tagEnd + 1, closingTagIndex);
+                                    String bodyContent = html.substring(tagEnd + 1, matchingClose);
                                     attrs.put("children", bodyContent);
                                     attrs.put("content", bodyContent);
-                                    nextIndex = closingTagIndex + closingTag.length();
+                                    nextIndex = matchingClose + ("</" + tagName + ">").length();
                                 }
 
                                 String renderedChild = instantiateAndRender(clazz, attrs);
@@ -260,6 +260,47 @@ public interface JssrComponent {
         }
 
         return sb.toString();
+    }
+
+    private static int findMatchingClosingTagIndex(String html, int searchFrom, String tagName) {
+        String openTagPrefix = "<" + tagName;
+        String closeTag = "</" + tagName + ">";
+        int len = html.length();
+        int nestingDepth = 1;
+        int curr = searchFrom;
+
+        while (curr < len) {
+            int nextOpen = html.indexOf(openTagPrefix, curr);
+            int nextClose = html.indexOf(closeTag, curr);
+
+            if (nextClose == -1) {
+                return -1;
+            }
+
+            // Check if open tag is a valid tag match (followed by space, /, or >)
+            boolean isValidOpen = false;
+            if (nextOpen != -1) {
+                int endNameIndex = nextOpen + openTagPrefix.length();
+                if (endNameIndex < len) {
+                    char c = html.charAt(endNameIndex);
+                    if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '/' || c == '>') {
+                        isValidOpen = true;
+                    }
+                }
+            }
+
+            if (isValidOpen && nextOpen < nextClose) {
+                nestingDepth++;
+                curr = nextOpen + openTagPrefix.length();
+            } else {
+                nestingDepth--;
+                if (nestingDepth == 0) {
+                    return nextClose;
+                }
+                curr = nextClose + closeTag.length();
+            }
+        }
+        return -1;
     }
 
     private static Map<String, String> parseAttributes(String attrString) {
@@ -395,7 +436,8 @@ public interface JssrComponent {
             return unescapeHtml(rawVal);
         }
         if (targetType == RawHtml.class) {
-            return RawHtml.of(unescapeHtml(rawVal));
+            // Preserve raw body content without re-unescaping already escaped HTML entities
+            return RawHtml.of(rawVal);
         }
         if (targetType == SafeUrl.class) {
             return SafeUrl.of(unescapeHtml(rawVal));

@@ -38,7 +38,7 @@ class ComponentTest {
         }
     }
 
-    public record Link(String href, String label) implements JssrComponent {
+    public record Link(SafeUrl href, String label) implements JssrComponent {
         @Override
         public String template() {
             return "<a href=\"${href}\">${label}</a>";
@@ -49,6 +49,17 @@ class ComponentTest {
         @Override
         public String template() {
             return "<Link href=\"${href}\" label=\"${label}\" />";
+        }
+    }
+
+    public record UserPageWithCard(String username) implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <Card>
+                    <p>${username}</p>
+                </Card>
+                """;
         }
     }
 
@@ -184,6 +195,44 @@ class ComponentTest {
         JssrComponent.register("PackagePrivateCard", PackagePrivateCard.class);
         JssrComponent.register("Card", Card.class);
         JssrComponent.register("Self", Self.class);
+        JssrComponent.register("UserPageWithCard", UserPageWithCard.class);
+    }
+
+    @Test
+    @DisplayName("SafeUrl should be HTML-escaped inside HTML attributes to prevent attribute injection XSS")
+    void testSafeUrlAttributeInjectionPrevention() {
+        Link link = new Link(SafeUrl.of("https://example.com/\" onmouseover=\"alert(1)"), "Click");
+        String html = link.render();
+
+        assertTrue(html.contains("href=\"https://example.com/&quot; onmouseover=&quot;alert(1)\""));
+        assertFalse(html.contains("\" onmouseover=\""));
+    }
+
+    @Test
+    @DisplayName("SafeUrl should decode HTML entities before checking scheme to block entity-encoded javascript: XSS")
+    void testSafeUrlHtmlEntityBypassPrevention() {
+        Link link = new Link(SafeUrl.of("java&#115;cript:alert(1)"), "Click");
+        String html = link.render();
+
+        assertTrue(html.contains("href=\"about:blank\""));
+        assertFalse(html.contains("javascript:"));
+    }
+
+    @Test
+    @DisplayName("Paired RawHtml children should preserve pre-escaped user data without re-activating XSS tags")
+    void testPairedRawHtmlChildrenXssPreservation() {
+        UserPageWithCard page = new UserPageWithCard("<img src=x onerror=alert(1)>");
+        String html = page.render();
+
+        assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+        assertFalse(html.contains("<img src=x onerror=alert(1)>"));
+    }
+
+    @Test
+    @DisplayName("Nested same-type paired components like <Card><Card>Inner</Card></Card> should match nesting levels correctly")
+    void testNestedSameTypePairedComponents() {
+        String html = JssrComponent.processCustomTags("<Card><Card>Inner</Card></Card>");
+        assertEquals("<div class=\"card\"><div class=\"card\">Inner</div></div>", html);
     }
 
     @Test
@@ -207,28 +256,12 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Unsafe URL protocols like javascript:, vbscript:, data: should be sanitized via SafeUrl")
-    void testUnsafeUrlSanitization() {
-        assertEquals("about:blank", SafeUrl.sanitize("javascript:alert(1)"));
-        assertEquals("about:blank", SafeUrl.sanitize("vbscript:msgbox(1)"));
-        assertEquals("about:blank", SafeUrl.sanitize("data:text/html,<script>alert(1)</script>"));
-        assertEquals("/users/42", SafeUrl.sanitize("/users/42"));
-    }
-
-    @Test
     @DisplayName("Unknown component prop attributes (typos) should throw an explicit IllegalArgumentException")
     void testStrictPropsValidation() {
         Exception exception = assertThrows(IllegalArgumentException.class, () -> {
             JssrComponent.processCustomTags("<Link hreef=\"/users\" label=\"Users\" />");
         });
         assertTrue(exception.getMessage().contains("Unknown attribute 'hreef' specified for JSSR component <Link>"));
-    }
-
-    @Test
-    @DisplayName("Paired component tags like <Card>BODY</Card> should pass inner content to children prop")
-    void testPairedComponentTags() {
-        String html = JssrComponent.processCustomTags("<Card><h1>Header</h1></Card>");
-        assertEquals("<div class=\"card\"><h1>Header</h1></div>", html);
     }
 
     @Test
