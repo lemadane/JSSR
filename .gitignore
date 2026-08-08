@@ -1,7 +1,6 @@
 # Gradle
 .gradle/
 build/
-!gradle/wrapper/gradle-wrapper.jar
 
 # IDE files
 .idea/
@@ -24,3 +23,6 @@ Thumbs.db
 # Temporary artifacts
 *.jar
 *.war
+
+# Track Gradle wrapper JAR specifically
+!gradle/wrapper/gradle-wrapper.jar

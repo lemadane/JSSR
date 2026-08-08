@@ -1,6 +1,7 @@
 package com.jssr.core;
 
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,14 @@ class ComponentTest {
         }
     }
 
-    public record Parent(String href, String label) implements JssrComponent {
+    public record UnsafeStringLink(String href, String label) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<a href=\"${href}\">${label}</a>";
+        }
+    }
+
+    public record Parent(SafeUrl href, String label) implements JssrComponent {
         @Override
         public String template() {
             return "<Link href=\"${href}\" label=\"${label}\" />";
@@ -175,10 +183,16 @@ class ComponentTest {
         }
     }
 
-    public record TestDefaults(String text, double amount, float weight, int count, boolean flag) implements JssrComponent {
+    public record TestDefaults(
+            Optional<String> text,
+            Optional<Double> amount,
+            Optional<Float> weight,
+            Optional<Integer> count,
+            Optional<Boolean> flag
+    ) implements JssrComponent {
         @Override
         public String template() {
-            return text + "|" + amount + "|" + weight + "|" + count + "|" + flag;
+            return text.orElse("null") + "|" + amount.orElse(0.0) + "|" + weight.orElse(0.0f) + "|" + count.orElse(0) + "|" + flag.orElse(false);
         }
     }
 
@@ -186,6 +200,57 @@ class ComponentTest {
         @Override
         public String template() {
             return "<TestDefaults />";
+        }
+    }
+
+    public record UserProfile(String name) {}
+
+    public record NestedPropComponent(UserProfile user) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<h1>${user.name}</h1>";
+        }
+    }
+
+    public record UnquotedAttrComponent(String title) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div title=${title}>Hello</div>";
+        }
+    }
+
+    public record FreeStandingStringComponent(String extra) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<button ${extra}>Click</button>";
+        }
+    }
+
+    public record FreeStandingBooleanComponent(BooleanAttribute activeAttr, HtmlAttribute dataAttr, boolean disabled) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${activeAttr} ${dataAttr} ${disabled} />";
+        }
+    }
+
+    public record SrcdocComponent(String html) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<iframe srcdoc=\"${html}\"></iframe>";
+        }
+    }
+
+    public record AlpineComponent(String expr) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div x-init=\"${expr}\">Alpine</div>";
+        }
+    }
+
+    public record HtmxOnComponent(String handler) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<button hx-on:click=\"${handler}\">HTMX</button>";
         }
     }
 
@@ -297,7 +362,7 @@ class ComponentTest {
     @Test
     @DisplayName("Parent-to-child dynamic props containing HTML entities or & should NOT be double-escaped")
     void testParentToChildPropsNoDoubleEscaping() {
-        Parent parent = new Parent("/users?a=1&b=2", "Tom & Jerry");
+        Parent parent = new Parent(SafeUrl.of("/users?a=1&b=2"), "Tom & Jerry");
         String html = parent.render();
 
         assertEquals("<a href=\"/users?a=1&amp;b=2\">Tom &amp; Jerry</a>", html);
@@ -332,7 +397,7 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Unquoted URL attributes containing slashes like href=/users/42 should parse correctly")
+    @DisplayName("Unquoted URL attributes containing slashes like href=/users/42 should parse correctly in custom tags")
     void testUnquotedUrlParsing() {
         String html = JssrComponent.processCustomTags("<Link href=/users/42 label=View />");
         assertEquals("<a href=\"/users/42\">View</a>", html);
@@ -404,7 +469,7 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Missing component attributes should fall back to standard default values")
+    @DisplayName("Missing component attributes with Optional types should fall back to Optional.empty()")
     void testMissingAttributesDefaultValues() {
         DefaultWrapper wrapper = new DefaultWrapper();
         String result = wrapper.render();
@@ -525,21 +590,22 @@ class ComponentTest {
             GenericContainer container = new GenericContainer(payload);
             String html = container.render();
 
-            // Verify raw unescaped script tags, raw img tags, or unescaped quotes never appear in output
             assertFalse(html.contains("<script>alert(1)</script>"), "Failed for payload: " + payload);
             assertFalse(html.contains("<img src=x onerror=alert(1)>"), "Failed for payload: " + payload);
             assertFalse(html.contains("</textarea><script>"), "Failed for payload: " + payload);
             assertFalse(html.contains("' onmouseover='"), "Failed for payload: " + payload);
             assertFalse(html.contains("\"><script>"), "Failed for payload: " + payload);
 
-            // Verify proper entity encoding occurred
             assertTrue(html.contains("&lt;") || html.contains("&gt;") || html.contains("&quot;") || html.contains("&#39;"));
         }
     }
 
-    public record CheckboxForm(String activeChecked, String notificationsChecked) implements JssrComponent {
+    public record CheckboxForm(BooleanAttribute activeChecked, BooleanAttribute notificationsChecked) implements JssrComponent {
         public static CheckboxForm of(boolean active, boolean notifications) {
-            return new CheckboxForm(active ? "checked" : "", notifications ? "checked" : "");
+            return new CheckboxForm(
+                BooleanAttribute.of("checked", active),
+                BooleanAttribute.of("checked", notifications)
+            );
         }
 
         @Override
@@ -553,11 +619,11 @@ class ComponentTest {
         }
     }
 
-    public record RadioForm(String adminChecked, String userChecked) implements JssrComponent {
+    public record RadioForm(BooleanAttribute adminChecked, BooleanAttribute userChecked) implements JssrComponent {
         public static RadioForm of(String selectedRole) {
             return new RadioForm(
-                "ADMIN".equalsIgnoreCase(selectedRole) ? "checked" : "",
-                "USER".equalsIgnoreCase(selectedRole) ? "checked" : ""
+                BooleanAttribute.of("checked", "ADMIN".equalsIgnoreCase(selectedRole)),
+                BooleanAttribute.of("checked", "USER".equalsIgnoreCase(selectedRole))
             );
         }
 
@@ -573,7 +639,7 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Checkbox components should render checked attribute based on boolean state")
+    @DisplayName("Checkbox components should render checked attribute based on BooleanAttribute state")
     void testCheckboxFormRendering() {
         CheckboxForm form1 = CheckboxForm.of(true, false);
         String html1 = form1.render();
@@ -587,7 +653,7 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("Radio button components should render checked attribute based on selected String/Enum state")
+    @DisplayName("Radio button components should render checked attribute based on selected BooleanAttribute state")
     void testRadioFormRendering() {
         RadioForm adminForm = RadioForm.of("ADMIN");
         String htmlAdmin = adminForm.render();
@@ -599,4 +665,91 @@ class ComponentTest {
         assertFalse(htmlUser.contains("value=\"ADMIN\" checked"));
         assertTrue(htmlUser.contains("value=\"USER\" checked"));
     }
+
+    // ----------------------------------------------------------------------------------
+    // NEW PRODUCTION HARDENING & SECURITY CONTEXT REJECTION TESTS
+    // ----------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Free-standing String variable interpolation between attributes should throw IllegalArgumentException")
+    void testFreeStandingStringAttributeInjectionRejection() {
+        FreeStandingStringComponent comp = new FreeStandingStringComponent("onmouseover=alert(1)");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("free-standing HTML attribute position is forbidden"));
+    }
+
+    @Test
+    @DisplayName("Free-standing BooleanAttribute, HtmlAttribute, and boolean fields should render safely")
+    void testFreeStandingTypedAttributesRendering() {
+        FreeStandingBooleanComponent comp = new FreeStandingBooleanComponent(
+            BooleanAttribute.of("checked", true),
+            HtmlAttribute.of("data-test", "val"),
+            true
+        );
+        String html = comp.render();
+        assertTrue(html.contains("<input checked data-test=\"val\" disabled />"));
+    }
+
+    @Test
+    @DisplayName("Unquoted HTML attribute interpolation should throw IllegalArgumentException")
+    void testUnquotedAttributeInterpolationRejection() {
+        UnquotedAttrComponent comp = new UnquotedAttrComponent("hello");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("unquoted HTML attribute is forbidden"));
+    }
+
+    @Test
+    @DisplayName("URL attributes (href) strictly require SafeUrl type and reject raw String variables")
+    void testUrlAttributeSafeUrlRequirement() {
+        UnsafeStringLink link = new UnsafeStringLink("https://example.com", "Click");
+        Exception ex = assertThrows(IllegalArgumentException.class, link::render);
+        assertTrue(ex.getMessage().contains("requires a SafeUrl field type instead of String"));
+    }
+
+    @Test
+    @DisplayName("Variable interpolation inside iframe srcdoc attribute should throw IllegalArgumentException")
+    void testSrcdocAttributeRejection() {
+        SrcdocComponent comp = new SrcdocComponent("<script>alert(1)</script>");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("inside 'srcdoc' attribute is forbidden"));
+    }
+
+    @Test
+    @DisplayName("Variable interpolation inside Alpine.js attributes (x-init, @click, :class) should throw IllegalArgumentException")
+    void testAlpineAttributeRejection() {
+        AlpineComponent comp = new AlpineComponent("alert(1)");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("inside executable framework attribute"));
+    }
+
+    @Test
+    @DisplayName("Variable interpolation inside HTMX event attributes (hx-on:click) should throw IllegalArgumentException")
+    void testHtmxAttributeRejection() {
+        HtmxOnComponent comp = new HtmxOnComponent("alert(1)");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("inside executable framework attribute"));
+    }
+
+    @Test
+    @DisplayName("Nested property evaluation (${user.name}) should resolve correctly")
+    void testNestedPropertyAccess() {
+        NestedPropComponent comp = new NestedPropComponent(new UserProfile("Charlie"));
+        assertEquals("<h1>Charlie</h1>", comp.render());
+    }
+
+    public record InvalidPropComp(String name) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<h1>${usernmae}</h1>";
+        }
+    }
+
+    @Test
+    @DisplayName("Unknown template variable placeholders should fail fast with explicit IllegalArgumentException")
+    void testUnknownVariableFailFast() {
+        InvalidPropComp comp = new InvalidPropComp("Charlie");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("Unknown JSSR interpolation property '${usernmae}'"));
+    }
 }
+

@@ -424,16 +424,16 @@ Checkbox and Radio Button `checked` state attributes are handled cleanly by supp
 
 ```java
 public record PreferencesForm(
-    String subscribeChecked, 
-    String adminRoleChecked, 
-    String userRoleChecked
+    BooleanAttribute subscribeChecked, 
+    BooleanAttribute adminRoleChecked, 
+    BooleanAttribute userRoleChecked
 ) implements JssrComponent {
 
     public static PreferencesForm of(boolean subscribe, String role) {
         return new PreferencesForm(
-            subscribe ? "checked" : "",
-            "ADMIN".equalsIgnoreCase(role) ? "checked" : "",
-            "USER".equalsIgnoreCase(role) ? "checked" : ""
+            BooleanAttribute.of("checked", subscribe),
+            BooleanAttribute.of("checked", "ADMIN".equalsIgnoreCase(role)),
+            BooleanAttribute.of("checked", "USER".equalsIgnoreCase(role))
         );
     }
 

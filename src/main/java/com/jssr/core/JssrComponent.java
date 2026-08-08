@@ -2,7 +2,9 @@ package com.jssr.core;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,6 +28,21 @@ public interface JssrComponent {
      * Maximum allowed component nesting depth before throwing a recursion error.
      */
     int MAX_RENDER_DEPTH = 100;
+
+    /**
+     * List of HTML attribute names that strictly require a SafeUrl value type.
+     */
+    Set<String> URL_ATTRIBUTES = Set.of("href", "src", "action", "formaction", "poster", "xlink:href");
+
+    /**
+     * Internal reflection metadata cache to optimize render performance across renders.
+     */
+    ClassValue<ComponentMetadata> METADATA_CACHE = new ClassValue<>() {
+        @Override
+        protected ComponentMetadata computeValue(Class<?> type) {
+            return new ComponentMetadata(type);
+        }
+    };
 
     /**
      * Register a custom component tag.
@@ -134,8 +151,9 @@ public interface JssrComponent {
     }
 
     /**
-     * Interpolate ${fieldName} placeholders in HTML templates using a context-aware single-pass scanner to prevent
-     * cascading interpolation or unsafe variable evaluation inside <script>, <style>, and comment blocks.
+     * Interpolate ${fieldName} placeholders in HTML templates using a context-aware single-pass scanner.
+     * Enforces strict XSS context rules (free-standing attributes, unquoted attributes, SafeUrl requirement,
+     * framework attribute protection, srcdoc rejection, script/style/comment rejection).
      *
      * @param component The component instance
      * @param html HTML template string containing ${fieldName} placeholders
@@ -149,32 +167,6 @@ public interface JssrComponent {
         Class<?> clazz = component.getClass();
         if (!clazz.isRecord()) {
             return html;
-        }
-
-        RecordComponent[] recordComponents = clazz.getRecordComponents();
-        Map<String, String> valuesMap = new HashMap<>();
-        for (RecordComponent rc : recordComponents) {
-            try {
-                Method accessor = rc.getAccessor();
-                accessor.setAccessible(true);
-                Object val = accessor.invoke(component);
-                String valStr;
-                if (val == null) {
-                    valStr = "";
-                } else if (val instanceof RawHtml raw) {
-                    valStr = raw.value() == null ? "" : raw.value();
-                } else if (val instanceof SafeUrl safe) {
-                    valStr = escapeHtml(safe.render());
-                } else if (val instanceof JssrComponent jc) {
-                    valStr = jc.render();
-                } else {
-                    valStr = escapeHtml(val.toString());
-                }
-                valuesMap.put(rc.getName(), valStr);
-            } catch (Exception e) {
-                throw new RuntimeException("JSSR render error: Unable to read property '"
-                        + rc.getName() + "' from component " + clazz.getSimpleName(), e);
-            }
         }
 
         StringBuilder sb = new StringBuilder(html.length() + 32);
@@ -193,6 +185,7 @@ public interface JssrComponent {
                 int end = html.indexOf('}', i + 2);
                 if (end != -1) {
                     String varName = html.substring(i + 2, end).trim();
+
                     if (blockContext != null) {
                         if ("script".equals(blockContext)) {
                             throw new IllegalArgumentException("JSSR interpolation ${" + varName 
@@ -206,25 +199,107 @@ public interface JssrComponent {
                         }
                     }
 
-                    if (inTag && !currentAttr.isEmpty()) {
-                        String lowerAttr = currentAttr.toLowerCase(Locale.ROOT);
-                        if (lowerAttr.startsWith("on")) {
-                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                    + "} is not allowed inside inline event handler attribute '" + currentAttr 
-                                    + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
-                        } else if ("style".equals(lowerAttr)) {
-                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                    + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
-                        }
+                    PropertyResult propRes = resolveProperty(component, varName);
+                    if (!propRes.found()) {
+                        throw new IllegalArgumentException("Unknown JSSR interpolation property '${" + varName 
+                                + "}' in component " + clazz.getSimpleName());
                     }
 
-                    if (valuesMap.containsKey(varName)) {
-                        sb.append(valuesMap.get(varName));
+                    Object val = propRes.value();
+                    Class<?> valType = propRes.type();
+
+                    if (inTag) {
+                        if (quoteChar == 0 && currentAttr.isEmpty()) {
+                            // Free-standing attribute position inside tag, e.g. <input ${extra} />
+                            if (val instanceof BooleanAttribute ba) {
+                                sb.append(ba.template());
+                            } else if (val instanceof HtmlAttribute ha) {
+                                sb.append(ha.template());
+                            } else if (valType == boolean.class || valType == Boolean.class || val instanceof Boolean) {
+                                boolean boolVal = val != null && (Boolean) val;
+                                String attrName = varName.contains(".") ? varName.substring(varName.lastIndexOf('.') + 1) : varName;
+                                sb.append(boolVal ? attrName : "");
+                            } else {
+                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                        + "} of type " + (valType != null ? valType.getSimpleName() : "unknown") 
+                                        + " in free-standing HTML attribute position is forbidden. Use boolean fields, BooleanAttribute, or HtmlAttribute for dynamic attributes.");
+                            }
+                            i = end + 1;
+                            continue;
+                        } else if (quoteChar == 0 && !currentAttr.isEmpty()) {
+                            // Unquoted attribute value position, e.g. title=${title}
+                            throw new IllegalArgumentException("JSSR interpolation in an unquoted HTML attribute is forbidden. Quote the attribute value: " 
+                                    + currentAttr + "=\"${" + varName + "}\"");
+                        } else {
+                            // Quoted attribute value position, e.g. title="${title}"
+                            String lowerAttr = currentAttr.toLowerCase(Locale.ROOT);
+
+                            if ("srcdoc".equals(lowerAttr)) {
+                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                        + "} inside 'srcdoc' attribute is forbidden due to HTML nested decoding risks.");
+                            }
+
+                            if (lowerAttr.startsWith("x-") || lowerAttr.startsWith("@") || lowerAttr.startsWith(":") || lowerAttr.startsWith("hx-on")) {
+                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                        + "} is not allowed inside executable framework attribute '" + currentAttr 
+                                        + "'. Use safe server-side state or explicit expression APIs.");
+                            }
+
+                            if (lowerAttr.startsWith("on")) {
+                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                        + "} is not allowed inside inline event handler attribute '" + currentAttr 
+                                        + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
+                            }
+
+                            if ("style".equals(lowerAttr)) {
+                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                        + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
+                            }
+
+                            if (URL_ATTRIBUTES.contains(lowerAttr)) {
+                                if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
+                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                            + "} inside URL attribute '" + currentAttr + "' requires a SafeUrl field type instead of " 
+                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                }
+                            }
+
+                            String formattedVal;
+                            if (val == null) {
+                                formattedVal = "";
+                            } else if (val instanceof SafeUrl safe) {
+                                formattedVal = escapeHtml(safe.render());
+                            } else if (val instanceof RawHtml raw) {
+                                formattedVal = raw.value() == null ? "" : raw.value();
+                            } else if (val instanceof Optional<?> opt) {
+                                formattedVal = opt.map(o -> escapeHtml(o.toString())).orElse("");
+                            } else {
+                                formattedVal = escapeHtml(val.toString());
+                            }
+                            sb.append(formattedVal);
+                            i = end + 1;
+                            continue;
+                        }
                     } else {
-                        sb.append("${").append(varName).append("}");
+                        // Body text interpolation
+                        String valStr;
+                        if (val == null) {
+                            valStr = "";
+                        } else if (val instanceof RawHtml raw) {
+                            valStr = raw.value() == null ? "" : raw.value();
+                        } else if (val instanceof SafeUrl safe) {
+                            valStr = escapeHtml(safe.render());
+                        } else if (val instanceof JssrComponent jc) {
+                            valStr = jc.render();
+                        } else if (val instanceof Optional<?> opt) {
+                            valStr = opt.map(o -> escapeHtml(o.toString())).orElse("");
+                        } else {
+                            valStr = escapeHtml(val.toString());
+                        }
+                        sb.append(valStr);
+                        i = end + 1;
+                        continue;
                     }
-                    i = end + 1;
-                    continue;
                 }
             }
 
@@ -288,7 +363,10 @@ public interface JssrComponent {
                             currentAttr = "";
                             attrBuf.setLength(0);
                         } else if (Character.isWhitespace(c)) {
-                            attrBuf.setLength(0);
+                            if (!attrBuf.toString().isBlank()) {
+                                currentAttr = "";
+                                attrBuf.setLength(0);
+                            }
                         } else {
                             attrBuf.append(c);
                         }
@@ -303,8 +381,7 @@ public interface JssrComponent {
     }
 
     /**
-     * Process custom JSX-like child tags inside rendered HTML strings using a context-aware state machine parser
-     * skipping comments, scripts, styles, and quoted attribute values, with nesting depth tracking for paired tags.
+     * Process custom JSX-like child tags inside rendered HTML strings using a context-aware state machine parser.
      *
      * @param html HTML input string containing custom tags
      * @return Rendered HTML string with custom tags replaced by component HTML
@@ -560,8 +637,9 @@ public interface JssrComponent {
 
     private static String instantiateAndRender(Class<? extends JssrComponent> clazz, Map<String, String> attrs, boolean hasPairedBody) {
         try {
-            if (clazz.isRecord()) {
-                RecordComponent[] recordComponents = clazz.getRecordComponents();
+            ComponentMetadata meta = METADATA_CACHE.get(clazz);
+            if (meta.isRecord) {
+                RecordComponent[] recordComponents = meta.recordComponents;
                 Set<String> validNames = new HashSet<>();
                 boolean acceptsBody = false;
                 for (RecordComponent rc : recordComponents) {
@@ -585,29 +663,57 @@ public interface JssrComponent {
                 }
 
                 Object[] args = new Object[recordComponents.length];
-                Class<?>[] paramTypes = new Class<?>[recordComponents.length];
-
                 for (int i = 0; i < recordComponents.length; i++) {
                     RecordComponent rc = recordComponents[i];
-                    paramTypes[i] = rc.getType();
                     String rawVal = attrs.get(rc.getName());
-                    args[i] = convertStringValue(rawVal, rc.getType());
+                    if (rawVal == null) {
+                        if (rc.getType() == Optional.class) {
+                            args[i] = Optional.empty();
+                        } else if ("children".equals(rc.getName()) || "content".equals(rc.getName())) {
+                            if (rc.getType() == RawHtml.class) {
+                                args[i] = RawHtml.of("");
+                            } else if (rc.getType() == String.class) {
+                                args[i] = "";
+                            } else {
+                                args[i] = null;
+                            }
+                        } else {
+                            throw new IllegalArgumentException("Missing required attribute '" + rc.getName() 
+                                    + "' for JSSR component <" + clazz.getSimpleName() + ">");
+                        }
+                    } else {
+                        args[i] = convertStringValue(rawVal, rc.getType(), rc.getGenericType());
+                    }
                 }
 
-                Constructor<? extends JssrComponent> ctor = clazz.getDeclaredConstructor(paramTypes);
-                ctor.setAccessible(true);
-                JssrComponent instance = ctor.newInstance(args);
+                JssrComponent instance = (JssrComponent) meta.constructor.newInstance(args);
                 return instance.render();
             } else {
-                Constructor<?> ctor = clazz.getDeclaredConstructor();
-                ctor.setAccessible(true);
-                JssrComponent instance = (JssrComponent) ctor.newInstance();
+                JssrComponent instance = (JssrComponent) meta.constructor.newInstance();
                 return instance.render();
             }
         } catch (Exception e) {
             if (e instanceof RuntimeException re) throw re;
             throw new RuntimeException("Error rendering JSSR component tag <" + clazz.getSimpleName() + ">: " + e.getMessage(), e);
         }
+    }
+
+    private static Object convertStringValue(String rawVal, Class<?> targetType, Type genericType) {
+        if (targetType == Optional.class) {
+            if (rawVal == null) {
+                return Optional.empty();
+            }
+            Class<?> innerType = String.class;
+            if (genericType instanceof ParameterizedType pt) {
+                Type[] actualArgs = pt.getActualTypeArguments();
+                if (actualArgs.length > 0 && actualArgs[0] instanceof Class<?> c) {
+                    innerType = c;
+                }
+            }
+            Object innerObj = convertStringValue(rawVal, innerType, innerType);
+            return Optional.ofNullable(innerObj);
+        }
+        return convertStringValue(rawVal, targetType);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -679,6 +785,93 @@ public interface JssrComponent {
                     }
                 }
                 throw e1;
+            }
+        }
+    }
+
+    private static PropertyResult resolveProperty(Object obj, String propertyPath) {
+        if (obj == null || propertyPath == null || propertyPath.isBlank()) {
+            return new PropertyResult(null, Object.class, false);
+        }
+        String[] parts = propertyPath.split("\\.");
+        Object curr = obj;
+        Class<?> currType = obj.getClass();
+
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (curr == null) {
+                return new PropertyResult(null, Object.class, false);
+            }
+            ComponentMetadata meta = METADATA_CACHE.get(curr.getClass());
+            if (meta.isRecord && meta.accessors.containsKey(part)) {
+                try {
+                    Method m = meta.accessors.get(part);
+                    curr = m.invoke(curr);
+                    currType = meta.types.get(part);
+                } catch (Exception e) {
+                    return new PropertyResult(null, Object.class, false);
+                }
+            } else {
+                try {
+                    Method m = null;
+                    try {
+                        m = curr.getClass().getMethod(part);
+                    } catch (NoSuchMethodException e1) {
+                        String getterName = "get" + Character.toUpperCase(part.charAt(0)) + part.substring(1);
+                        m = curr.getClass().getMethod(getterName);
+                    }
+                    m.setAccessible(true);
+                    curr = m.invoke(curr);
+                    currType = m.getReturnType();
+                } catch (Exception e) {
+                    return new PropertyResult(null, Object.class, false);
+                }
+            }
+        }
+        return new PropertyResult(curr, currType, true);
+    }
+
+    record PropertyResult(Object value, Class<?> type, boolean found) {}
+
+    class ComponentMetadata {
+        final boolean isRecord;
+        final RecordComponent[] recordComponents;
+        final Map<String, Method> accessors;
+        final Map<String, Class<?>> types;
+        final Constructor<?> constructor;
+
+        ComponentMetadata(Class<?> clazz) {
+            this.isRecord = clazz.isRecord();
+            if (isRecord) {
+                this.recordComponents = clazz.getRecordComponents();
+                this.accessors = new HashMap<>();
+                this.types = new HashMap<>();
+                for (RecordComponent rc : recordComponents) {
+                    Method m = rc.getAccessor();
+                    m.setAccessible(true);
+                    accessors.put(rc.getName(), m);
+                    types.put(rc.getName(), rc.getType());
+                }
+                Constructor<?> c = null;
+                try {
+                    Class<?>[] paramTypes = new Class<?>[recordComponents.length];
+                    for (int i = 0; i < recordComponents.length; i++) {
+                        paramTypes[i] = recordComponents[i].getType();
+                    }
+                    c = clazz.getDeclaredConstructor(paramTypes);
+                    c.setAccessible(true);
+                } catch (Exception ignored) {}
+                this.constructor = c;
+            } else {
+                this.recordComponents = new RecordComponent[0];
+                this.accessors = Collections.emptyMap();
+                this.types = Collections.emptyMap();
+                Constructor<?> c = null;
+                try {
+                    c = clazz.getDeclaredConstructor();
+                    c.setAccessible(true);
+                } catch (Exception ignored) {}
+                this.constructor = c;
             }
         }
     }

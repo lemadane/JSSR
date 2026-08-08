@@ -1,5 +1,6 @@
 package com.jssr.e2e;
 
+import com.jssr.core.BooleanAttribute;
 import com.jssr.core.JssrComponent;
 import com.jssr.core.RawHtml;
 import com.jssr.core.SafeUrl;
@@ -149,6 +150,20 @@ class UserCrudE2ETest {
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString("Tom &amp; Jerry")))
                     .andExpect(content().string(not(containsString("Tom &amp;amp; Jerry"))));
+        }
+
+        @Test
+        @DisplayName("1b. E2E HTTP test: Submitting XSS payload to POST /users must render HTML-escaped output via JssrConverter without executing raw tags")
+        void testE2eXssPostEscaping() throws Exception {
+            mockMvc.perform(post("/users")
+                            .param("name", "<script>alert('XSS')</script>")
+                            .param("email", "hacker@jssr.dev")
+                            .param("role", "Developer")
+                            .param("status", "ACTIVE"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                    .andExpect(content().string(containsString("&lt;script&gt;alert(&#39;XSS&#39;)&lt;/script&gt;")))
+                    .andExpect(content().string(not(containsString("<script>alert('XSS')</script>"))));
         }
 
         @Test
@@ -387,14 +402,20 @@ class UserCrudE2ETest {
     @DisplayName("9. Radio Buttons & Checkboxes E2E Form Control Tests")
     class FormControlsRadioAndCheckboxTests {
 
-        public record AdvancedForm(String subscribeChecked, String termsChecked, String freeChecked, String proChecked, String enterpriseChecked) implements JssrComponent {
+        public record AdvancedForm(
+            BooleanAttribute subscribeChecked,
+            BooleanAttribute termsChecked,
+            BooleanAttribute freeChecked,
+            BooleanAttribute proChecked,
+            BooleanAttribute enterpriseChecked
+        ) implements JssrComponent {
             public static AdvancedForm of(boolean subscribe, boolean acceptTerms, String plan) {
                 return new AdvancedForm(
-                    subscribe ? "checked" : "",
-                    acceptTerms ? "checked" : "",
-                    "FREE".equalsIgnoreCase(plan) ? "checked" : "",
-                    "PRO".equalsIgnoreCase(plan) ? "checked" : "",
-                    "ENTERPRISE".equalsIgnoreCase(plan) ? "checked" : ""
+                    BooleanAttribute.of("checked", subscribe),
+                    BooleanAttribute.of("checked", acceptTerms),
+                    BooleanAttribute.of("checked", "FREE".equalsIgnoreCase(plan)),
+                    BooleanAttribute.of("checked", "PRO".equalsIgnoreCase(plan)),
+                    BooleanAttribute.of("checked", "ENTERPRISE".equalsIgnoreCase(plan))
                 );
             }
 
