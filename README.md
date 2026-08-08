@@ -31,6 +31,10 @@ JSSR combines the best of both worlds by bringing React-like component architect
 
 ## How Variable Interpolation & Security Work
 
+> [!IMPORTANT]
+> **Core Security Principle**: *Strings are data, JSX is markup, and trusted HTML must be explicit.*
+> Application developers are never required to manually escape values. XSS protection is built directly into JSSR's core interpolation and rendering pipeline by default.
+
 In JSSR component Records, any field (e.g. `name`, `role`, `active`) can be referenced directly using `${fieldName}` syntax inside multiline text blocks:
 
 ```java
@@ -65,6 +69,74 @@ JSSR enforces strict security and rendering rules for variable interpolation:
 7. **Null Value Handling**: `null` values produce empty output (`""`) rather than rendering literal `"null"` text (e.g. `<span>${nullVal}</span>` renders `<span></span>`).
 8. **Primitive & Scalar Preservation**: Numbers (`42`, `3.14`), booleans (`true`), enums, and scalar values render as clean, un-mangled text.
 9. **Single-Pass Escaping & Double Escaping Prevention**: Interpolation uses a single-pass scanner, guaranteeing values like `Tom & Jerry` are escaped exactly once to `Tom &amp; Jerry` (never `Tom &amp;amp; Jerry`).
+10. **HTML Grammar Context Detection**: Interpolation uses an HTML state-machine parser to track tags, quoted attributes, comments, and script/style blocks.
+11. **Unsafe Context Rejection**: `${...}` interpolation inside `<script>`, `<style>`, or `<!-- comment -->` blocks is strictly forbidden and throws a clear `IllegalArgumentException` at render time.
+12. **URL Attribute Protection & Sanitization**: `SafeUrl` wrappers enforce a strict scheme allowlist (`http`, `https`, `mailto`, `tel`, relative URLs) while sanitizing dangerous protocols (`javascript:`, `vbscript:`, `data:`) to `about:blank` and escaping quote characters.
+13. **Standard Java 17 Syntax Preservation**: Developers write native Java 17 multiline text blocks (`"""..."""`) and `${fieldName}` syntax without extra pre-processors, macros, or custom DSL extensions.
+14. **Simple 3-Pattern Developer API**:
+    - *Normal data* (`String`, numbers, booleans) $\rightarrow$ automatically safe and escaped.
+    - *Child components* (`JssrComponent`) $\rightarrow$ rendered recursively as raw DOM markup.
+    - *Trusted HTML* (`RawHtml.trustedHtml(html)`) $\rightarrow$ explicitly marked raw HTML.
+15. **Strong Value Typing (No String Guessing)**: Unescaped markup rendering is strictly type-bound (`RawHtml` or `JssrComponent`). Plain Java `String` values are **always** treated as untrusted data and are never pattern-guessed (e.g. checking if a string starts with `<`).
+16. **Comprehensive XSS Test Suite**: Protected by automated regression tests covering high-risk XSS attack vectors (`<script>`, `<img onerror>`, quote breakout, `</textarea>`).
+
+---
+
+## Automatic Escaping
+
+In JSSR, every `${...}` variable interpolation is **escaped by default**.
+
+### Why Automatic Escaping Prevents XSS
+
+Cross-Site Scripting (XSS) vulnerabilities occur when untrusted user input containing HTML or JavaScript tags (such as `<script>`) is injected directly into web pages and executed by the browser. By automatically converting special characters (`&`, `<`, `>`, `"`, `'`) into safe HTML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`), JSSR ensures user input is rendered strictly as plain visible text rather than executable markup.
+
+### Code Example
+
+```java
+public record GreetingProps(String name) {}
+
+public record Greeting(GreetingProps props) implements JssrComponent {
+    @Override
+    public String template() {
+        return """
+            <h1>Hello ${props.name}</h1>
+            """;
+    }
+}
+```
+
+Passing a malicious string payload:
+
+```java
+new Greeting(new GreetingProps("<script>alert(1)</script>")).render();
+```
+
+Renders the following safe HTML output:
+
+```html
+<h1>Hello &lt;script&gt;alert(1)&lt;/script&gt;</h1>
+```
+
+The browser displays the literal text `Hello <script>alert(1)</script>` on screen and **does NOT execute JavaScript**.
+
+### Key Rules for Rendered Content
+
+1. **Child Components are Rendered as JSSR Markup**: Fields typed as `JssrComponent` (child components and DOM fragments) are recognized by JSSR's type system and rendered recursively as raw HTML element markup without being escaped as text.
+2. **How to Intentionally Insert Trusted HTML**: When you intentionally need to insert already-safe HTML (e.g. sanitized rich text from a trusted CMS), explicitly wrap the string using `RawHtml.trustedHtml(html)` or `RawHtml.of(html)`:
+   ```java
+   public record Article(RawHtml content) implements JssrComponent {
+       @Override
+       public String template() {
+           return """
+               <article>${content}</article>
+               """;
+       }
+   }
+
+   // Usage:
+   new Article(RawHtml.trustedHtml("<b>Trusted rich text</b>")).render();
+   ```
+3. **Security Responsibility**: Trusted HTML (`RawHtml`) bypasses escaping and should **only** be used for content the developer explicitly knows is safe. Standard `String` fields should always be used for user-supplied data.
 
 ---
 

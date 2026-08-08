@@ -124,8 +124,18 @@ public interface JssrComponent {
     }
 
     /**
-     * Interpolate ${fieldName} placeholders in HTML templates using a single-pass scanner to prevent
-     * cascading interpolation or double-evaluating inserted values.
+     * Create a RawHtml wrapper for trusted unescaped HTML content.
+     *
+     * @param input Raw trusted HTML content
+     * @return RawHtml record instance
+     */
+    static RawHtml trustedHtml(String input) {
+        return RawHtml.trustedHtml(input);
+    }
+
+    /**
+     * Interpolate ${fieldName} placeholders in HTML templates using a context-aware single-pass scanner to prevent
+     * cascading interpolation or unsafe variable evaluation inside <script>, <style>, and comment blocks.
      *
      * @param component The component instance
      * @param html HTML template string containing ${fieldName} placeholders
@@ -170,28 +180,96 @@ public interface JssrComponent {
         StringBuilder sb = new StringBuilder(html.length() + 32);
         int len = html.length();
         int i = 0;
+
+        boolean inTag = false;
+        char quoteChar = 0;
+        String blockContext = null; // "script", "style", "comment"
+
         while (i < len) {
-            int start = html.indexOf("${", i);
-            if (start == -1) {
-                sb.append(html, i, len);
-                break;
+            // Check for variable placeholder ${varName}
+            if (i + 1 < len && html.charAt(i) == '$' && html.charAt(i + 1) == '{') {
+                int end = html.indexOf('}', i + 2);
+                if (end != -1) {
+                    String varName = html.substring(i + 2, end).trim();
+                    if (blockContext != null) {
+                        if ("script".equals(blockContext)) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                    + "} is not allowed inside <script> blocks without an explicit safe JavaScript value API.");
+                        } else if ("style".equals(blockContext)) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                    + "} is not allowed inside <style> blocks.");
+                        } else if ("comment".equals(blockContext)) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                    + "} is not allowed inside HTML comments.");
+                        }
+                    }
+
+                    if (valuesMap.containsKey(varName)) {
+                        sb.append(valuesMap.get(varName));
+                    } else {
+                        sb.append("${").append(varName).append("}");
+                    }
+                    i = end + 1;
+                    continue;
+                }
             }
 
-            sb.append(html, i, start);
-            int end = html.indexOf('}', start + 2);
-            if (end == -1) {
-                sb.append(html, start, len);
-                break;
-            }
+            char c = html.charAt(i);
 
-            String varName = html.substring(start + 2, end).trim();
-            if (valuesMap.containsKey(varName)) {
-                sb.append(valuesMap.get(varName));
-                i = end + 1;
+            if ("comment".equals(blockContext)) {
+                if (i + 2 < len && html.startsWith("-->", i)) {
+                    sb.append("-->");
+                    i += 3;
+                    blockContext = null;
+                    continue;
+                }
+            } else if ("script".equals(blockContext)) {
+                if (i + 8 < len && html.substring(i, i + 9).toLowerCase(Locale.ROOT).equals("</script>")) {
+                    sb.append(html, i, i + 9);
+                    i += 9;
+                    blockContext = null;
+                    continue;
+                }
+            } else if ("style".equals(blockContext)) {
+                if (i + 7 < len && html.substring(i, i + 8).toLowerCase(Locale.ROOT).equals("</style>")) {
+                    sb.append(html, i, i + 8);
+                    i += 8;
+                    blockContext = null;
+                    continue;
+                }
             } else {
-                sb.append("${").append(varName).append("}");
-                i = end + 1;
+                if (c == '<') {
+                    if (i + 3 < len && html.startsWith("<!--", i)) {
+                        blockContext = "comment";
+                    } else if (i + 6 < len && html.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                        char next = i + 7 < len ? html.charAt(i + 7) : '>';
+                        if (next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '>') {
+                            blockContext = "script";
+                        }
+                    } else if (i + 5 < len && html.substring(i, Math.min(i + 6, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                        char next = i + 6 < len ? html.charAt(i + 6) : '>';
+                        if (next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '>') {
+                            blockContext = "style";
+                        }
+                    }
+                    inTag = true;
+                } else if (inTag) {
+                    if (quoteChar != 0) {
+                        if (c == quoteChar) {
+                            quoteChar = 0;
+                        }
+                    } else {
+                        if (c == '"' || c == '\'') {
+                            quoteChar = c;
+                        } else if (c == '>') {
+                            inTag = false;
+                        }
+                    }
+                }
             }
+
+            sb.append(c);
+            i++;
         }
         return sb.toString();
     }

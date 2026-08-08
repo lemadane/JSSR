@@ -1,5 +1,6 @@
 package com.jssr.core;
 
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -408,5 +409,101 @@ class ComponentTest {
         DefaultWrapper wrapper = new DefaultWrapper();
         String result = wrapper.render();
         assertEquals("null|0.0|0.0|0|false", result);
+    }
+
+    public record ScriptComponent(String data) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<script>const val = \"${data}\";</script>";
+        }
+    }
+
+    public record StyleComponent(String color) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<style>body { color: ${color}; }</style>";
+        }
+    }
+
+    public record CommentComponent(String text) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<!-- ${text} -->";
+        }
+    }
+
+    public record TrustedHtmlComponent(RawHtml html) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div>${html}</div>";
+        }
+    }
+
+    @Test
+    @DisplayName("Interpolation inside <script> blocks should throw an IllegalArgumentException")
+    void testScriptInterpolationRejection() {
+        ScriptComponent comp = new ScriptComponent("hello");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("is not allowed inside <script> blocks"));
+    }
+
+    @Test
+    @DisplayName("Interpolation inside <style> blocks should throw an IllegalArgumentException")
+    void testStyleInterpolationRejection() {
+        StyleComponent comp = new StyleComponent("red");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("is not allowed inside <style> blocks"));
+    }
+
+    @Test
+    @DisplayName("Interpolation inside HTML comments should throw an IllegalArgumentException")
+    void testCommentInterpolationRejection() {
+        CommentComponent comp = new CommentComponent("comment");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("is not allowed inside HTML comments"));
+    }
+
+    @Test
+    @DisplayName("JssrComponent.trustedHtml and RawHtml.trustedHtml should create trusted unescaped HTML wrappers")
+    void testTrustedHtmlHelper() {
+        TrustedHtmlComponent comp = new TrustedHtmlComponent(JssrComponent.trustedHtml("<span>Safe Markup</span>"));
+        assertEquals("<div><span>Safe Markup</span></div>", comp.render());
+
+        TrustedHtmlComponent comp2 = new TrustedHtmlComponent(RawHtml.trustedHtml("<strong>Bold Text</strong>"));
+        assertEquals("<div><strong>Bold Text</strong></div>", comp2.render());
+    }
+
+    public record GenericContainer(String input) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div title='${input}' data-value=\"${input}\"><p>${input}</p><textarea>${input}</textarea></div>";
+        }
+    }
+
+    @Test
+    @DisplayName("Comprehensive XSS security regression suite testing dangerous attack payloads")
+    void testXssSecurityRegressionSuite() {
+        List<String> xssPayloads = List.of(
+            "<script>alert(1)</script>",
+            "<img src=x onerror=alert(1)>",
+            "\"><script>alert(1)</script>",
+            "' onmouseover='alert(1)",
+            "</textarea><script>alert(1)</script>"
+        );
+
+        for (String payload : xssPayloads) {
+            GenericContainer container = new GenericContainer(payload);
+            String html = container.render();
+
+            // Verify raw unescaped script tags, raw img tags, or unescaped quotes never appear in output
+            assertFalse(html.contains("<script>alert(1)</script>"), "Failed for payload: " + payload);
+            assertFalse(html.contains("<img src=x onerror=alert(1)>"), "Failed for payload: " + payload);
+            assertFalse(html.contains("</textarea><script>"), "Failed for payload: " + payload);
+            assertFalse(html.contains("' onmouseover='"), "Failed for payload: " + payload);
+            assertFalse(html.contains("\"><script>"), "Failed for payload: " + payload);
+
+            // Verify proper entity encoding occurred
+            assertTrue(html.contains("&lt;") || html.contains("&gt;") || html.contains("&quot;") || html.contains("&#39;"));
+        }
     }
 }
