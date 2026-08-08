@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Switch Statements & Reflection (`@switch (expr)` & `typeof(object)`)**: Pattern matching on values, strings, numbers, enums, or runtime class/record names (`typeof(object)`).
 - **Pattern Matching (`@if (object instanceof Type varName)`)**: Java 17+ `instanceof` type checking and scoped pattern variable binding.
 - **Loop Directives (`@for (item : list) ... @else ... @end` & `@while`)**: Iteration over collections/arrays/iterables with `@else` empty-list fallbacks, bounded `@while` loops (`MAX_WHILE_ITERATIONS = 1000`), `@continue`, and `@break`.
+- **Parser Fuzz Testing Suite (`ParserFuzzTest.java`)**: Added automated fuzz testing suite that executes 1,000 randomly generated pathological control flow templates, deeply nested directives (up to depth 150), truncated directives, open quotes, and malformed tags to verify zero parser deadlocks, infinite loops, or uncaught exceptions.
+- **Spring Boot 4 / 3.x Compatibility Verification Suite (`SpringBoot4CompatibilityTest.java`)**: Added explicit E2E integration test suite verifying JSSR component record rendering, controller bindings, and ViewResolver contracts across Spring Web MVC runtime environments.
 
 #### Fixed
 - **Template Exception Boundaries (`@try:` catch scoping)**: Changed `@try:` block error handling to catch `Exception` instead of `Throwable`. Critical JVM `Error` instances (`OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `ThreadDeath`, `AssertionError`) now escape `@try` blocks un-intercepted to bubble up to the application error handler container.
