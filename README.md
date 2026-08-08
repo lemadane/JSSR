@@ -49,10 +49,22 @@ public record UserCard(String name, String role, boolean active) implements Jssr
 }
 ```
 
-- **Automatic HTML Escaping**: `${name}` automatically escapes special HTML characters (`&`, `<`, `>`, `"`, `'`) to prevent XSS.
-- **Parent-to-Child Single Escaping**: Passing dynamic `${prop}` values from parent to child components (`<Link href="${href}" label="${label}" />`) is unescaped during attribute conversion so child templates escape the value **exactly once**.
-- **Trusted HTML**: Wrap trusted HTML in `RawHtml.of("<b>bold</b>")` to bypass HTML escaping.
-- **Safe URLs**: Wrap URLs in `SafeUrl.of(url)` or use `JssrComponent.sanitizeUrl(url)` to block `javascript:` protocol attacks.
+JSSR enforces strict security and rendering rules for variable interpolation:
+
+1. **Default HTML Escaping**: Every `${...}` interpolation escapes special HTML characters by default:
+   - `&` $\rightarrow$ `&amp;`
+   - `<` $\rightarrow$ `&lt;`
+   - `>` $\rightarrow$ `&gt;`
+   - `"` $\rightarrow$ `&quot;`
+   - `'` $\rightarrow$ `&#39;`
+2. **HTML Text Context Handling**: Text node values like `Hello <strong>World</strong>` in `<p>${message}</p>` safely render as `<p>Hello &lt;strong&gt;World&lt;/strong&gt;</p>`.
+3. **HTML Attribute Context Protection**: Quotes in attributes like `<input value="${value}">` or `<div title='${title}'>` are converted to `&quot;` and `&#39;`, preventing attribute breakout XSS attacks.
+4. **Arbitrary Structure Prevention**: Injected strings containing tags (e.g. `</div><script>alert(1)</script>`) are escaped into text entities so interpolation can never alter the outer HTML tag structure.
+5. **Explicit Trusted HTML (`RawHtml`)**: Trusted pre-rendered HTML must explicitly use the `RawHtml.of("<b>bold</b>")` wrapper type. Arbitrary `String` values are never trusted by default.
+6. **Nested Component Rendering**: Fields typed as `JssrComponent` (child components and fragments) render their DOM structure recursively without being text-escaped.
+7. **Null Value Handling**: `null` values produce empty output (`""`) rather than rendering literal `"null"` text (e.g. `<span>${nullVal}</span>` renders `<span></span>`).
+8. **Primitive & Scalar Preservation**: Numbers (`42`, `3.14`), booleans (`true`), enums, and scalar values render as clean, un-mangled text.
+9. **Single-Pass Escaping & Double Escaping Prevention**: Interpolation uses a single-pass scanner, guaranteeing values like `Tom & Jerry` are escaped exactly once to `Tom &amp; Jerry` (never `Tom &amp;amp; Jerry`).
 
 ---
 
