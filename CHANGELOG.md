@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.0] - 2026-08-08
+
+### Native Template Control Flow & Pattern Matching Release
+
+#### Added
+- **Native Template Control Flow Engine (`@if`, `@elseif`, `@else`, `@for`, `@while`, `@switch`, `@case`, `@default`, `@try`, `@catch`, `@finally`, `@continue`, `@break`, `@end`)**: Added template control flow directives inside HTML multiline text block templates with support for optional/required trailing colons (`@try:`, `@catch(err):`, `@finally:`).
+- **Template Error Boundaries (`@try: ... @catch(err): ... @finally: ... @end`)**: Added template fault-isolation boundaries that capture rendering/property-access exceptions and render fallback HTML without crashing the page (HTTP 500), guaranteeing `@finally:` block execution.
+- **Switch Statements & Reflection (`@switch (expr)` & `typeof(object)`)**: Pattern matching on values, strings, numbers, enums, or runtime class/record names (`typeof(object)`).
+- **Pattern Matching (`@if (object instanceof Type varName)`)**: Java 17+ `instanceof` type checking and scoped pattern variable binding.
+- **Loop Directives (`@for (item : list) ... @else ... @end` & `@while`)**: Iteration over collections/arrays/iterables with `@else` empty-list fallbacks, bounded `@while` loops (`MAX_WHILE_ITERATIONS = 1000`), `@continue`, and `@break`.
+
+---
+
 ## [1.0.0] - 2026-08-08
 
 ### Production Security Hardening & Release Qualification
@@ -20,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Vulnerability Disclosure Policy**: Created [SECURITY.md](SECURITY.md) documenting private advisory process and SLA.
 
 #### Added
+- **Native Control Flow Directives (`@if`, `@elseif`, `@else`, `@for`, `@while`, `@switch`, `@case`, `@default`, `@try`, `@catch`, `@finally`, `@continue`, `@break`, `@end`)**: Integrated clean template control flow engine supporting `@if (condition)`, `@if (object instanceof Type varName)` pattern matching, `@try:` ... `@catch(err):` ... `@finally:` ... `@end` template error boundaries for sub-component fault isolation, `@for (item : list) ... @else ... @end`, `@while (condition) ... @end`, `@switch (expr)` with `@case` / `@default` / `@break`, and `typeof(object)` type reflection with scoped variable resolution, empty-list fallbacks, infinite loop guards (`MAX_WHILE_ITERATIONS = 1000`), property paths, negations (`!`), equality/relational comparisons (`==`, `!=`, `>`, `>=`, `<`, `<=`), automatic truthiness rules, and arbitrary nested directive blocks.
 - **`BooleanAttribute`**: Added type-safe record representation (`BooleanAttribute.of("checked", bool)`) for boolean HTML attributes (`checked`, `disabled`, `selected`, `readonly`).
 - **`HtmlAttribute`**: Added type-safe record representation (`HtmlAttribute.of("name", "val")`) for dynamic attribute pairs.
 - **Nested Property Resolution**: Supported property path navigation in template placeholders (e.g., `${user.name}` or `${props.title}`).

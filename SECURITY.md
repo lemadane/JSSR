@@ -12,6 +12,7 @@ JSSR is designed for internet-facing, security-critical Java applications. It en
 
 | Version | Supported          | Security Maintenance |
 | ------- | ------------------ | -------------------- |
+| 1.1.x   | :white_check_mark: | Active Release       |
 | 1.0.x   | :white_check_mark: | Production Release   |
 | < 1.0.0 | :x:                | Unsupported          |
 

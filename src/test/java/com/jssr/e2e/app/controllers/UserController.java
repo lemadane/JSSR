@@ -137,6 +137,32 @@ public class UserController {
         );
     }
 
+    @GetMapping("/dashboard")
+    public JssrComponent getDashboard(
+            @RequestParam(value = "userType", required = false, defaultValue = "admin") String userType,
+            @RequestParam(value = "fault", required = false, defaultValue = "false") boolean fault,
+            @RequestParam(value = "emptyProjects", required = false, defaultValue = "false") boolean emptyProjects) {
+
+        Object account = switch (userType.toLowerCase()) {
+            case "admin" -> new com.jssr.e2e.app.model.AdminUser("Elena Rostova", "SUPERUSER,READ,WRITE");
+            case "dev" -> new com.jssr.e2e.app.model.DeveloperUser("Marcus Vance", "@mvance", "Java");
+            default -> new com.jssr.e2e.app.model.StandardUser("Sophia Chen", "ENTERPRISE");
+        };
+
+        List<com.jssr.e2e.app.components.SystemOverviewDashboardCard.ProjectInfo> projects = emptyProjects 
+            ? List.of() 
+            : List.of(
+                new com.jssr.e2e.app.components.SystemOverviewDashboardCard.ProjectInfo("JSSR Core Engine", "Deploying", true, 10),
+                new com.jssr.e2e.app.components.SystemOverviewDashboardCard.ProjectInfo("Internal Debug Helper", "Ignored", false, -1),
+                new com.jssr.e2e.app.components.SystemOverviewDashboardCard.ProjectInfo("Spring WebMvc Integration", "Active", false, 20)
+            );
+
+        com.jssr.e2e.app.components.SystemOverviewDashboardCard card = 
+            new com.jssr.e2e.app.components.SystemOverviewDashboardCard(account, projects, fault);
+            
+        return new PageLayout("Operations Control Center", card.render());
+    }
+
     private UserList renderUserListComponent(List<User> users, String query, String toastMsg, String toastType) {
         long total = repository.countTotal();
         long active = repository.countActive();

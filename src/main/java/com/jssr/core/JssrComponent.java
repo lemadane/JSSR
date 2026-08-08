@@ -81,7 +81,9 @@ public interface JssrComponent {
                 return rawHtml == null ? "" : rawHtml;
             }
 
-            String interpolatedHtml = interpolateVariables(this, rawHtml);
+            Map<String, Object> localScope = Collections.emptyMap();
+            String controlFlowProcessed = processControlFlow(this, localScope, rawHtml);
+            String interpolatedHtml = interpolateVariables(this, localScope, controlFlowProcessed);
             return processCustomTags(interpolatedHtml);
         } finally {
             RENDER_DEPTH.set(depth);
@@ -159,12 +161,16 @@ public interface JssrComponent {
      * @return HTML string with interpolated variable values
      */
     static String interpolateVariables(JssrComponent component, String html) {
+        return interpolateVariables(component, Collections.emptyMap(), html);
+    }
+
+    static String interpolateVariables(JssrComponent component, Map<String, Object> localScope, String html) {
         if (component == null || html == null || html.isBlank() || !html.contains("${")) {
             return html == null ? "" : html;
         }
 
         Class<?> clazz = component.getClass();
-        if (!clazz.isRecord()) {
+        if (!clazz.isRecord() && (localScope == null || localScope.isEmpty())) {
             return html;
         }
 
@@ -200,7 +206,7 @@ public interface JssrComponent {
                         }
                     }
 
-                    PropertyResult propRes = resolveProperty(component, varName);
+                    PropertyResult propRes = resolveProperty(component, localScope, varName);
                     if (!propRes.found()) {
                         throw new IllegalArgumentException("Unknown JSSR interpolation property '${" + varName 
                                 + "}' in component " + clazz.getSimpleName());
@@ -818,10 +824,48 @@ public interface JssrComponent {
     }
 
     private static PropertyResult resolveProperty(Object obj, String propertyPath) {
-        if (obj == null || propertyPath == null || propertyPath.isBlank()) {
+        return resolveProperty(obj, Collections.emptyMap(), propertyPath);
+    }
+
+    private static PropertyResult resolveProperty(Object obj, Map<String, Object> localScope, String propertyPath) {
+        if (propertyPath == null || propertyPath.isBlank()) {
             return new PropertyResult(null, Object.class, false);
         }
-        String[] parts = propertyPath.split("\\.");
+        String trimmedPath = propertyPath.trim();
+
+        if (localScope != null && localScope.containsKey(trimmedPath)) {
+            Object val = localScope.get(trimmedPath);
+            return new PropertyResult(val, val == null ? Object.class : val.getClass(), true);
+        }
+
+        if (trimmedPath.startsWith("typeof(") && trimmedPath.endsWith(")")) {
+            String targetExpr = trimmedPath.substring(7, trimmedPath.length() - 1).trim();
+            PropertyResult targetRes = resolveProperty(obj, localScope, targetExpr);
+            Object targetVal = targetRes.value();
+            if (targetVal instanceof Optional<?> opt) {
+                targetVal = opt.orElse(null);
+            }
+            if (targetVal == null) {
+                return new PropertyResult("null", String.class, true);
+            }
+            return new PropertyResult(targetVal.getClass().getSimpleName(), String.class, true);
+        }
+
+        String[] parts = trimmedPath.split("\\.");
+        String rootName = parts[0].trim();
+
+        if (localScope != null && localScope.containsKey(rootName)) {
+            Object rootVal = localScope.get(rootName);
+            if (parts.length == 1) {
+                return new PropertyResult(rootVal, rootVal == null ? Object.class : rootVal.getClass(), true);
+            }
+            String subPath = propertyPath.substring(rootName.length() + 1);
+            return resolveProperty(rootVal, Collections.emptyMap(), subPath);
+        }
+
+        if (obj == null) {
+            return new PropertyResult(null, Object.class, false);
+        }
         Object curr = obj;
         Class<?> currType = obj.getClass();
 
@@ -831,7 +875,7 @@ public interface JssrComponent {
                 return new PropertyResult(null, Object.class, false);
             }
             ComponentMetadata meta = METADATA_CACHE.get(curr.getClass());
-            if (meta.isRecord && meta.accessors.containsKey(part)) {
+            if (meta != null && meta.isRecord && meta.accessors.containsKey(part)) {
                 try {
                     Method m = meta.accessors.get(part);
                     curr = m.invoke(curr);
@@ -857,6 +901,1017 @@ public interface JssrComponent {
             }
         }
         return new PropertyResult(curr, currType, true);
+    }
+
+    int MAX_WHILE_ITERATIONS = 1000;
+
+    enum LoopSignal { NONE, CONTINUE, BREAK }
+    record ControlFlowResult(String content, LoopSignal signal) {}
+
+    /**
+     * Parse control flow directives (@if, @for, @while, @continue, @break) in component templates.
+     */
+    static String processControlFlow(JssrComponent component, String template) {
+        return processControlFlow(component, Collections.emptyMap(), template);
+    }
+
+    static String processControlFlow(JssrComponent component, Map<String, Object> localScope, String template) {
+        if (component == null || template == null || template.isBlank() 
+                || (!template.contains("@if") && !template.contains("@for") && !template.contains("@while") 
+                    && !template.contains("@switch") && !template.contains("@try") 
+                    && !template.contains("@continue") && !template.contains("@break"))) {
+            return template == null ? "" : template;
+        }
+        return parseControlFlowBlocks(component, localScope, template).content();
+    }
+
+    private static ControlFlowResult parseControlFlowBlocks(JssrComponent component, Map<String, Object> localScope, String text) {
+        if (text == null || text.isEmpty() 
+                || (!text.contains("@if") && !text.contains("@for") && !text.contains("@while") 
+                    && !text.contains("@switch") && !text.contains("@try") 
+                    && !text.contains("@continue") && !text.contains("@break"))) {
+            return new ControlFlowResult(text == null ? "" : text, LoopSignal.NONE);
+        }
+
+        StringBuilder result = new StringBuilder();
+        int len = text.length();
+        int curr = 0;
+
+        while (curr < len) {
+            int directiveIdx = findNextControlFlowDirective(text, curr);
+            if (directiveIdx == -1) {
+                result.append(text, curr, len);
+                break;
+            }
+
+            result.append(text, curr, directiveIdx);
+
+            if (text.startsWith("@continue", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 9)) {
+                return new ControlFlowResult(result.toString(), LoopSignal.CONTINUE);
+            } else if (text.startsWith("@break", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
+                return new ControlFlowResult(result.toString(), LoopSignal.BREAK);
+            } else if (text.startsWith("@if", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 3)) {
+                IfBlockResult blockResult = parseIfBlockAt(component, text, directiveIdx);
+                ControlFlowResult evalRes = evaluateIfBlockResult(component, localScope, blockResult);
+                result.append(evalRes.content());
+                if (evalRes.signal() != LoopSignal.NONE) {
+                    return new ControlFlowResult(result.toString(), evalRes.signal());
+                }
+                curr = blockResult.endIndex;
+            } else if (text.startsWith("@try", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 4)) {
+                TryBlockResult blockResult = parseTryBlockAt(component, text, directiveIdx);
+                ControlFlowResult evalRes = evaluateTryBlockResult(component, localScope, blockResult);
+                result.append(evalRes.content());
+                if (evalRes.signal() != LoopSignal.NONE) {
+                    return new ControlFlowResult(result.toString(), evalRes.signal());
+                }
+                curr = blockResult.endIndex;
+            } else if (text.startsWith("@for", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 4)) {
+                ForBlockResult blockResult = parseForBlockAt(component, text, directiveIdx);
+                String renderedFor = evaluateForBlockResult(component, localScope, blockResult);
+                result.append(renderedFor);
+                curr = blockResult.endIndex;
+            } else if (text.startsWith("@while", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
+                WhileBlockResult blockResult = parseWhileBlockAt(component, text, directiveIdx);
+                String renderedWhile = evaluateWhileBlockResult(component, localScope, blockResult);
+                result.append(renderedWhile);
+                curr = blockResult.endIndex;
+            } else if (text.startsWith("@switch", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 7)) {
+                SwitchBlockResult blockResult = parseSwitchBlockAt(component, text, directiveIdx);
+                ControlFlowResult evalRes = evaluateSwitchBlockResult(component, localScope, blockResult);
+                result.append(evalRes.content());
+                if (evalRes.signal() != LoopSignal.NONE) {
+                    return new ControlFlowResult(result.toString(), evalRes.signal());
+                }
+                curr = blockResult.endIndex;
+            } else {
+                curr = directiveIdx + 1;
+            }
+        }
+
+        return new ControlFlowResult(result.toString(), LoopSignal.NONE);
+    }
+
+    record IfBlockResult(List<Branch> branches, int endIndex) {}
+    record Branch(String conditionExpr, boolean isElse, String body) {}
+
+    private static IfBlockResult parseIfBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        List<Branch> branches = new ArrayList<>();
+
+        int condOpen = text.indexOf('(', startIdx + 3);
+        int condClose = findMatchingParen(text, condOpen);
+        if (condOpen == -1 || condClose == -1) {
+            throw new IllegalArgumentException("Malformed '@if' condition in directive starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName());
+        }
+        String firstCond = text.substring(condOpen + 1, condClose).trim();
+
+        int curr = condClose + 1;
+        int bodyStart = curr;
+
+        String currentCond = firstCond;
+        boolean currentIsElse = false;
+        int nestedDepth = 0;
+
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                nestedDepth++;
+                curr += 7;
+            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                nestedDepth++;
+                curr += 6;
+            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
+                nestedDepth++;
+                curr += 3;
+            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                if (nestedDepth == 0) {
+                    String body = text.substring(bodyStart, curr);
+                    branches.add(new Branch(currentCond, currentIsElse, body));
+                    return new IfBlockResult(branches, curr + 4);
+                } else {
+                    nestedDepth--;
+                    curr += 4;
+                }
+            } else if (nestedDepth == 0 && text.startsWith("@elseif", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                String body = text.substring(bodyStart, curr);
+                branches.add(new Branch(currentCond, currentIsElse, body));
+
+                int nextCondOpen = text.indexOf('(', curr + 7);
+                int nextCondClose = findMatchingParen(text, nextCondOpen);
+                if (nextCondOpen == -1 || nextCondClose == -1) {
+                    throw new IllegalArgumentException("Malformed '@elseif' condition near index " + curr 
+                            + " in component " + component.getClass().getSimpleName());
+                }
+                currentCond = text.substring(nextCondOpen + 1, nextCondClose).trim();
+                currentIsElse = false;
+                curr = nextCondClose + 1;
+                bodyStart = curr;
+            } else if (nestedDepth == 0 && text.startsWith("@else", curr) && isValidDirectiveBoundary(text, curr, 5)) {
+                String body = text.substring(bodyStart, curr);
+                branches.add(new Branch(currentCond, currentIsElse, body));
+
+                currentCond = null;
+                currentIsElse = true;
+                curr += 5;
+                bodyStart = curr;
+            } else {
+                curr++;
+            }
+        }
+
+        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@if' in component " 
+                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+    }
+
+    record ForBlockResult(String loopVar, String listExpr, String loopBody, String elseBody, boolean hasElse, int endIndex) {}
+
+    private static ForBlockResult parseForBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        int condOpen = text.indexOf('(', startIdx + 4);
+        int condClose = findMatchingParen(text, condOpen);
+        if (condOpen == -1 || condClose == -1) {
+            throw new IllegalArgumentException("Malformed '@for' condition in directive starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName());
+        }
+
+        String header = text.substring(condOpen + 1, condClose).trim();
+        String[] parts = header.split(":", 2);
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("Malformed '@for' header '" + header + "' (expected format: 'item : collection') in component " 
+                    + component.getClass().getSimpleName());
+        }
+
+        String loopVar = parts[0].trim();
+        String listExpr = parts[1].trim();
+
+        int curr = condClose + 1;
+        int loopBodyStart = curr;
+        String loopBody = "";
+        String elseBody = "";
+        boolean hasElse = false;
+
+        int nestedDepth = 0;
+
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                nestedDepth++;
+                curr += 7;
+            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                nestedDepth++;
+                curr += 6;
+            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
+                nestedDepth++;
+                curr += 3;
+            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                if (nestedDepth > 0) {
+                    nestedDepth--;
+                    curr += 4;
+                } else {
+                    if (hasElse) {
+                        elseBody = text.substring(loopBodyStart, curr);
+                    } else {
+                        loopBody = text.substring(loopBodyStart, curr);
+                    }
+                    return new ForBlockResult(loopVar, listExpr, loopBody, elseBody, hasElse, curr + 4);
+                }
+            } else if (nestedDepth == 0 && text.startsWith("@else", curr) && isValidDirectiveBoundary(text, curr, 5)) {
+                loopBody = text.substring(loopBodyStart, curr);
+                hasElse = true;
+                curr += 5;
+                loopBodyStart = curr;
+            } else {
+                curr++;
+            }
+        }
+
+        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@for' in component " 
+                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+    }
+
+    record WhileBlockResult(String conditionExpr, String loopBody, int endIndex) {}
+
+    private static WhileBlockResult parseWhileBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        int condOpen = text.indexOf('(', startIdx + 6);
+        int condClose = findMatchingParen(text, condOpen);
+        if (condOpen == -1 || condClose == -1) {
+            throw new IllegalArgumentException("Malformed '@while' condition in directive starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName());
+        }
+
+        String conditionExpr = text.substring(condOpen + 1, condClose).trim();
+
+        int curr = condClose + 1;
+        int loopBodyStart = curr;
+
+        int nestedDepth = 0;
+
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                nestedDepth++;
+                curr += 7;
+            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                nestedDepth++;
+                curr += 6;
+            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
+                nestedDepth++;
+                curr += 3;
+            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                if (nestedDepth > 0) {
+                    nestedDepth--;
+                    curr += 4;
+                } else {
+                    String loopBody = text.substring(loopBodyStart, curr);
+                    return new WhileBlockResult(conditionExpr, loopBody, curr + 4);
+                }
+            } else {
+                curr++;
+            }
+        }
+
+        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@while' in component " 
+                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+    }
+
+    private static int findNextControlFlowDirective(String text, int fromIdx) {
+        int len = text.length();
+        int curr = fromIdx;
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if ((text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3))
+                    || (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4))
+                    || (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6))
+                    || (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7))
+                    || (text.startsWith("@case", curr) && isValidDirectiveBoundary(text, curr, 5))
+                    || (text.startsWith("@default", curr) && isValidDirectiveBoundary(text, curr, 8))
+                    || (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4))
+                    || (text.startsWith("@catch", curr) && isValidDirectiveBoundary(text, curr, 6))
+                    || (text.startsWith("@finally", curr) && isValidDirectiveBoundary(text, curr, 8))
+                    || (text.startsWith("@continue", curr) && isValidDirectiveBoundary(text, curr, 9))
+                    || (text.startsWith("@break", curr) && isValidDirectiveBoundary(text, curr, 6))) {
+                return curr;
+            }
+            curr++;
+        }
+        return -1;
+    }
+
+    record TryBlockResult(String tryBody, String catchVar, String catchBody, boolean hasCatch, String finallyBody, boolean hasFinally, int endIndex) {}
+
+    private static TryBlockResult parseTryBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        int curr = startIdx + 4; // Skip "@try"
+        if (curr < len && text.charAt(curr) == ':') {
+            curr++;
+        }
+        int currentBodyStart = curr;
+        String tryBody = "";
+        String catchVar = null;
+        String catchBody = "";
+        boolean hasCatch = false;
+        String finallyBody = "";
+        boolean hasFinally = false;
+        int currentSection = 0; // 0 = try, 1 = catch, 2 = finally
+        int nestedDepth = 0;
+
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+                if (curr < len && text.charAt(curr) == ':') curr++;
+            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                nestedDepth++;
+                curr += 7;
+            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                nestedDepth++;
+                curr += 6;
+            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
+                nestedDepth++;
+                curr += 3;
+            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                if (nestedDepth > 0) {
+                    nestedDepth--;
+                    curr += 4;
+                } else {
+                    if (currentSection == 0) {
+                        tryBody = text.substring(currentBodyStart, curr);
+                    } else if (currentSection == 1) {
+                        catchBody = text.substring(currentBodyStart, curr);
+                    } else if (currentSection == 2) {
+                        finallyBody = text.substring(currentBodyStart, curr);
+                    }
+                    return new TryBlockResult(tryBody, catchVar, catchBody, hasCatch, finallyBody, hasFinally, curr + 4);
+                }
+            } else if (nestedDepth == 0 && text.startsWith("@catch", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                tryBody = text.substring(currentBodyStart, curr);
+                hasCatch = true;
+                currentSection = 1;
+                curr += 6;
+
+                if (curr < len && text.charAt(curr) == '(') {
+                    int parenClose = findMatchingParen(text, curr);
+                    if (parenClose != -1) {
+                        catchVar = text.substring(curr + 1, parenClose).trim();
+                        curr = parenClose + 1;
+                    }
+                }
+                if (curr < len && text.charAt(curr) == ':') {
+                    curr++;
+                }
+                currentBodyStart = curr;
+            } else if (nestedDepth == 0 && text.startsWith("@finally", curr) && isValidDirectiveBoundary(text, curr, 8)) {
+                if (currentSection == 0) {
+                    tryBody = text.substring(currentBodyStart, curr);
+                } else if (currentSection == 1) {
+                    catchBody = text.substring(currentBodyStart, curr);
+                }
+                hasFinally = true;
+                currentSection = 2;
+                curr += 8;
+                if (curr < len && text.charAt(curr) == ':') {
+                    curr++;
+                }
+                currentBodyStart = curr;
+            } else {
+                curr++;
+            }
+        }
+
+        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@try' in component " 
+                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+    }
+
+    private static ControlFlowResult evaluateTryBlockResult(JssrComponent component, Map<String, Object> localScope, TryBlockResult tryResult) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, tryResult.tryBody());
+            String interpolated = interpolateVariables(component, localScope, flowRes.content());
+            sb.append(interpolated);
+        } catch (Throwable t) {
+            if (tryResult.hasCatch()) {
+                Map<String, Object> catchScope = new HashMap<>(localScope);
+                String varName = (tryResult.catchVar() == null || tryResult.catchVar().isBlank()) ? "err" : tryResult.catchVar();
+                String rawMsg = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+                String safeMsg = rawMsg.replace("${", "&#36;{");
+
+                catchScope.put(varName, t);
+                catchScope.put(varName + ".message", safeMsg);
+                catchScope.put("e", t);
+                catchScope.put("e.message", safeMsg);
+                catchScope.put("error", t);
+                catchScope.put("error.message", safeMsg);
+
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, catchScope, tryResult.catchBody());
+                String interpolated = interpolateVariables(component, catchScope, flowRes.content());
+                sb.append(interpolated);
+            }
+        } finally {
+            if (tryResult.hasFinally()) {
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, tryResult.finallyBody());
+                String interpolated = interpolateVariables(component, localScope, flowRes.content());
+                sb.append(interpolated);
+            }
+        }
+        return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
+    }
+
+    record SwitchBlockResult(String switchExpr, List<SwitchCase> cases, SwitchCase defaultCase, boolean hasDefault, int endIndex) {}
+    record SwitchCase(String caseExpr, String body, boolean isDefault) {}
+
+    private static SwitchBlockResult parseSwitchBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        int condOpen = text.indexOf('(', startIdx + 7);
+        int condClose = findMatchingParen(text, condOpen);
+        if (condOpen == -1 || condClose == -1) {
+            throw new IllegalArgumentException("Malformed '@switch' condition in directive starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName());
+        }
+
+        String switchExpr = text.substring(condOpen + 1, condClose).trim();
+
+        int curr = condClose + 1;
+        List<SwitchCase> cases = new ArrayList<>();
+        SwitchCase defaultCase = null;
+        boolean hasDefault = false;
+
+        String currentCaseExpr = null;
+        boolean currentIsDefault = false;
+        int currentBodyStart = -1;
+        int nestedDepth = 0;
+
+        while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
+                nestedDepth++;
+                curr += 7;
+            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
+                nestedDepth++;
+                curr += 6;
+            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                nestedDepth++;
+                curr += 4;
+            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
+                nestedDepth++;
+                curr += 3;
+            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
+                if (nestedDepth == 0) {
+                    if (currentBodyStart != -1) {
+                        String body = text.substring(currentBodyStart, curr);
+                        if (currentIsDefault) {
+                            defaultCase = new SwitchCase(null, body, true);
+                            hasDefault = true;
+                        } else {
+                            cases.add(new SwitchCase(currentCaseExpr, body, false));
+                        }
+                    }
+                    return new SwitchBlockResult(switchExpr, cases, defaultCase, hasDefault, curr + 4);
+                } else {
+                    nestedDepth--;
+                    curr += 4;
+                }
+            } else if (nestedDepth == 0 && text.startsWith("@case", curr) && isValidDirectiveBoundary(text, curr, 5)) {
+                if (currentBodyStart != -1) {
+                    String body = text.substring(currentBodyStart, curr);
+                    if (currentIsDefault) {
+                        defaultCase = new SwitchCase(null, body, true);
+                        hasDefault = true;
+                    } else {
+                        cases.add(new SwitchCase(currentCaseExpr, body, false));
+                    }
+                }
+
+                int caseCondOpen = text.indexOf('(', curr + 5);
+                int caseCondClose = findMatchingParen(text, caseCondOpen);
+                if (caseCondOpen == -1 || caseCondClose == -1) {
+                    throw new IllegalArgumentException("Malformed '@case' condition near index " + curr 
+                            + " in component " + component.getClass().getSimpleName());
+                }
+                currentCaseExpr = text.substring(caseCondOpen + 1, caseCondClose).trim();
+                currentIsDefault = false;
+                curr = caseCondClose + 1;
+                currentBodyStart = curr;
+            } else if (nestedDepth == 0 && text.startsWith("@default", curr) && isValidDirectiveBoundary(text, curr, 8)) {
+                if (currentBodyStart != -1) {
+                    String body = text.substring(currentBodyStart, curr);
+                    if (currentIsDefault) {
+                        defaultCase = new SwitchCase(null, body, true);
+                        hasDefault = true;
+                    } else {
+                        cases.add(new SwitchCase(currentCaseExpr, body, false));
+                    }
+                }
+
+                currentCaseExpr = null;
+                currentIsDefault = true;
+                curr += 8;
+                currentBodyStart = curr;
+            } else {
+                curr++;
+            }
+        }
+
+        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@switch' in component " 
+                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+    }
+
+    private static ControlFlowResult evaluateSwitchBlockResult(JssrComponent component, Map<String, Object> localScope, SwitchBlockResult switchResult) {
+        PropertyResult switchRes = resolveProperty(component, localScope, switchResult.switchExpr);
+        Object switchVal = switchRes.value();
+        String switchValStr = switchVal == null ? "null" : String.valueOf(switchVal);
+
+        for (SwitchCase sc : switchResult.cases) {
+            String caseValExpr = sc.caseExpr();
+            String caseValClean = cleanCaseLiteral(caseValExpr);
+
+            if (switchValStr.equalsIgnoreCase(caseValClean) || switchValStr.equals(caseValExpr)) {
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, sc.body());
+                if (flowRes.signal() == LoopSignal.BREAK) {
+                    return new ControlFlowResult(flowRes.content(), LoopSignal.NONE);
+                }
+                return flowRes;
+            }
+        }
+
+        if (switchResult.hasDefault()) {
+            ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, switchResult.defaultCase().body());
+            if (flowRes.signal() == LoopSignal.BREAK) {
+                return new ControlFlowResult(flowRes.content(), LoopSignal.NONE);
+            }
+            return flowRes;
+        }
+
+        return new ControlFlowResult("", LoopSignal.NONE);
+    }
+
+    private static String cleanCaseLiteral(String expr) {
+        if (expr == null) return "";
+        String trimmed = expr.trim();
+        if ((trimmed.startsWith("'") && trimmed.endsWith("'")) || (trimmed.startsWith("\"") && trimmed.endsWith("\""))) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    private static ControlFlowResult evaluateIfBlockResult(JssrComponent component, Map<String, Object> localScope, IfBlockResult blockResult) {
+        for (Branch b : blockResult.branches) {
+            if (b.isElse) {
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, b.body);
+                String interpolated = interpolateVariables(component, localScope, flowRes.content());
+                return new ControlFlowResult(interpolated, flowRes.signal());
+            }
+            ConditionResult condRes = evaluateConditionWithBinding(component, localScope, b.conditionExpr);
+            if (condRes.matches()) {
+                Map<String, Object> branchScope = localScope;
+                if (!condRes.bindings().isEmpty()) {
+                    branchScope = new HashMap<>(localScope);
+                    branchScope.putAll(condRes.bindings());
+                }
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, branchScope, b.body);
+                String interpolated = interpolateVariables(component, branchScope, flowRes.content());
+                return new ControlFlowResult(interpolated, flowRes.signal());
+            }
+        }
+        return new ControlFlowResult("", LoopSignal.NONE);
+    }
+
+    private static String evaluateForBlockResult(JssrComponent component, Map<String, Object> localScope, ForBlockResult forResult) {
+        PropertyResult listRes = resolveProperty(component, localScope, forResult.listExpr);
+        List<?> items = toList(listRes.value());
+
+        if (!items.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (Object elem : items) {
+                Map<String, Object> iterationScope = new HashMap<>(localScope);
+                iterationScope.put(forResult.loopVar, elem);
+
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, iterationScope, forResult.loopBody);
+                String interpolated = interpolateVariables(component, iterationScope, flowRes.content());
+                sb.append(interpolated);
+
+                if (flowRes.signal() == LoopSignal.BREAK) {
+                    break;
+                }
+            }
+            return sb.toString();
+        } else {
+            if (forResult.hasElse) {
+                ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, forResult.elseBody);
+                return interpolateVariables(component, localScope, flowRes.content());
+            } else {
+                return "";
+            }
+        }
+    }
+
+    private static String evaluateWhileBlockResult(JssrComponent component, Map<String, Object> localScope, WhileBlockResult whileResult) {
+        StringBuilder sb = new StringBuilder();
+        int iteration = 0;
+
+        while (evaluateCondition(component, localScope, whileResult.conditionExpr)) {
+            iteration++;
+            if (iteration > MAX_WHILE_ITERATIONS) {
+                throw new IllegalStateException("JSSR @while loop iteration limit exceeded (max " + MAX_WHILE_ITERATIONS 
+                        + " iterations) for condition '" + whileResult.conditionExpr + "' in component " + component.getClass().getSimpleName());
+            }
+
+            ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, whileResult.loopBody);
+            String interpolated = interpolateVariables(component, localScope, flowRes.content());
+            sb.append(interpolated);
+
+            if (flowRes.signal() == LoopSignal.BREAK) {
+                break;
+            }
+        }
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<?> toList(Object obj) {
+        if (obj instanceof Optional<?> opt) {
+            obj = opt.orElse(null);
+        }
+        if (obj == null) {
+            return Collections.emptyList();
+        }
+        if (obj instanceof Collection<?> c) {
+            return new ArrayList<>(c);
+        }
+        if (obj instanceof Iterable<?> it) {
+            List<Object> list = new ArrayList<>();
+            for (Object o : it) {
+                list.add(o);
+            }
+            return list;
+        }
+        if (obj instanceof Object[] arr) {
+            return Arrays.asList(arr);
+        }
+        return List.of(obj);
+    }
+
+    private static boolean isValidDirectiveBoundary(String text, int idx, int len) {
+        boolean validBefore = (idx == 0 || Character.isWhitespace(text.charAt(idx - 1)) || text.charAt(idx - 1) == '>' || text.charAt(idx - 1) == '\n');
+        int afterIdx = idx + len;
+        boolean validAfter = (afterIdx >= text.length() || Character.isWhitespace(text.charAt(afterIdx)) || text.charAt(afterIdx) == '(' || text.charAt(afterIdx) == '<' || text.charAt(afterIdx) == ':');
+        return validBefore && validAfter;
+    }
+
+    private static int findMatchingParen(String text, int openIdx) {
+        if (openIdx == -1) return -1;
+        int len = text.length();
+        int depth = 1;
+        for (int i = openIdx + 1; i < len; i++) {
+            char c = text.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')') {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    record ConditionResult(boolean matches, Map<String, Object> bindings) {}
+
+    static ConditionResult evaluateConditionWithBinding(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
+        if (conditionExpr == null || conditionExpr.isBlank()) {
+            return new ConditionResult(false, Collections.emptyMap());
+        }
+
+        String expr = conditionExpr.trim();
+        if (expr.startsWith("${") && expr.endsWith("}")) {
+            expr = expr.substring(2, expr.length() - 1).trim();
+        }
+        if (expr.startsWith("(") && expr.endsWith(")")) {
+            expr = expr.substring(1, expr.length() - 1).trim();
+        }
+
+        if (expr.contains(" instanceof ")) {
+            String[] parts = expr.split(" instanceof ", 2);
+            String leftPath = cleanExprPath(parts[0].trim());
+            String rightPart = parts[1].trim();
+
+            Object leftVal = getPropertyValueOrNull(component, localScope, leftPath);
+            if (leftVal instanceof Optional<?> opt) {
+                leftVal = opt.orElse(null);
+            }
+            if (leftVal == null) {
+                return new ConditionResult(false, Collections.emptyMap());
+            }
+
+            String[] rightTokens = rightPart.split("\\s+");
+            String targetType = rightTokens[0].trim();
+            String patternVar = rightTokens.length > 1 ? rightTokens[1].trim() : null;
+
+            String actualTypeName = leftVal.getClass().getSimpleName();
+            String actualFullTypeName = leftVal.getClass().getName();
+
+            boolean matches = actualTypeName.equals(targetType) 
+                    || actualFullTypeName.equals(targetType)
+                    || actualFullTypeName.endsWith("." + targetType) 
+                    || targetType.endsWith("." + actualTypeName)
+                    || targetType.equalsIgnoreCase(actualTypeName);
+
+            if (matches) {
+                Map<String, Object> bindings = Collections.emptyMap();
+                if (patternVar != null && !patternVar.isBlank()) {
+                    bindings = Map.of(patternVar, leftVal);
+                }
+                return new ConditionResult(true, bindings);
+            }
+            return new ConditionResult(false, Collections.emptyMap());
+        }
+
+        boolean val = evaluateCondition(component, localScope, conditionExpr);
+        return new ConditionResult(val, Collections.emptyMap());
+    }
+
+    /**
+     * Evaluate condition expression (e.g. "user.isAdmin", "!disabled", "role == 'ADMIN'", "count > 0").
+     */
+    static boolean evaluateCondition(JssrComponent component, String conditionExpr) {
+        return evaluateCondition(component, Collections.emptyMap(), conditionExpr);
+    }
+
+    static boolean evaluateCondition(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
+        if (conditionExpr == null || conditionExpr.isBlank()) {
+            return false;
+        }
+
+        String expr = conditionExpr.trim();
+        if (expr.startsWith("${") && expr.endsWith("}")) {
+            expr = expr.substring(2, expr.length() - 1).trim();
+        }
+        if (expr.startsWith("(") && expr.endsWith(")")) {
+            expr = expr.substring(1, expr.length() - 1).trim();
+        }
+
+        if (expr.contains(" instanceof ")) {
+            return evaluateConditionWithBinding(component, localScope, expr).matches();
+        }
+
+        if (expr.startsWith("!")) {
+            return !evaluateCondition(component, localScope, expr.substring(1).trim());
+        }
+
+        if (expr.contains("==")) {
+            String[] parts = expr.split("==", 2);
+            String leftPath = cleanExprPath(parts[0].trim());
+            String rightLit = cleanLiteral(parts[1].trim());
+            Object leftVal = getPropertyValueOrNull(component, localScope, leftPath);
+            String leftStr = leftVal == null ? "" : leftVal.toString();
+            return leftStr.equalsIgnoreCase(rightLit);
+        }
+
+        if (expr.contains("!=")) {
+            String[] parts = expr.split("!=", 2);
+            String leftPath = cleanExprPath(parts[0].trim());
+            String rightLit = cleanLiteral(parts[1].trim());
+            Object leftVal = getPropertyValueOrNull(component, localScope, leftPath);
+            String leftStr = leftVal == null ? "" : leftVal.toString();
+            return !leftStr.equalsIgnoreCase(rightLit);
+        }
+
+        if (expr.contains(">=")) {
+            String[] parts = expr.split(">=", 2);
+            double leftNum = getNumericValue(component, localScope, cleanExprPath(parts[0].trim()));
+            double rightNum = parseDoubleQuiet(parts[1].trim());
+            return leftNum >= rightNum;
+        }
+
+        if (expr.contains("<=")) {
+            String[] parts = expr.split("<=", 2);
+            double leftNum = getNumericValue(component, localScope, cleanExprPath(parts[0].trim()));
+            double rightNum = parseDoubleQuiet(parts[1].trim());
+            return leftNum <= rightNum;
+        }
+
+        if (expr.contains(">")) {
+            String[] parts = expr.split(">", 2);
+            double leftNum = getNumericValue(component, localScope, cleanExprPath(parts[0].trim()));
+            double rightNum = parseDoubleQuiet(parts[1].trim());
+            return leftNum > rightNum;
+        }
+
+        if (expr.contains("<")) {
+            String[] parts = expr.split("<", 2);
+            double leftNum = getNumericValue(component, localScope, cleanExprPath(parts[0].trim()));
+            double rightNum = parseDoubleQuiet(parts[1].trim());
+            return leftNum < rightNum;
+        }
+
+        String path = cleanExprPath(expr);
+        PropertyResult propRes = resolveProperty(component, localScope, path);
+        if (!propRes.found()) {
+            throw new IllegalArgumentException("Unknown JSSR control flow property '" + expr 
+                    + "' in component " + component.getClass().getSimpleName());
+        }
+
+        return isTruthy(propRes.value());
+    }
+
+    private static String cleanExprPath(String path) {
+        String p = path.trim();
+        if (p.startsWith("${") && p.endsWith("}")) {
+            p = p.substring(2, p.length() - 1).trim();
+        }
+        return p;
+    }
+
+    private static String cleanLiteral(String lit) {
+        String l = lit.trim();
+        if (l.startsWith("${") && l.endsWith("}")) {
+            l = l.substring(2, l.length() - 1).trim();
+        }
+        if ((l.startsWith("'") && l.endsWith("'")) || (l.startsWith("\"") && l.endsWith("\""))) {
+            return l.substring(1, l.length() - 1);
+        }
+        return l;
+    }
+
+    private static Object getPropertyValueOrNull(JssrComponent component, Map<String, Object> localScope, String path) {
+        PropertyResult res = resolveProperty(component, localScope, path);
+        return res.found() ? res.value() : null;
+    }
+
+    private static double getNumericValue(JssrComponent component, Map<String, Object> localScope, String path) {
+        Object val = getPropertyValueOrNull(component, localScope, path);
+        if (val instanceof Number n) {
+            return n.doubleValue();
+        }
+        return val == null ? 0.0 : parseDoubleQuiet(val.toString());
+    }
+
+    private static double parseDoubleQuiet(String s) {
+        try {
+            return Double.parseDouble(cleanLiteral(s));
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private static boolean isTruthy(Object val) {
+        if (val == null) return false;
+        if (val instanceof Boolean b) return b;
+        if (val instanceof BooleanAttribute ba) return ba.present();
+        if (val instanceof Optional<?> opt) return opt.isPresent();
+        if (val instanceof CharSequence cs) return !cs.toString().isBlank();
+        if (val instanceof Number n) return n.doubleValue() != 0.0;
+        if (val instanceof Collection<?> c) return !c.isEmpty();
+        if (val instanceof Map<?,?> m) return !m.isEmpty();
+        return true;
     }
 
     record PropertyResult(Object value, Class<?> type, boolean found) {}

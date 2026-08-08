@@ -59,6 +59,177 @@ public record UserCard(String name, String role, boolean active) implements Jssr
 }
 ```
 
+---
+
+## Native Template Control Flow Directives
+
+JSSR provides a rich, native control flow engine designed for Java 17+ record templates. Control flow directives support clean syntax with optional or required trailing colons (`:`), full block nesting, and automatic variable scoping.
+
+### 📋 Control Flow Directives Reference
+
+| Directive Syntax | Key Feature & Purpose | Typical Example |
+| :--- | :--- | :--- |
+| `@if(cond):` ... `@elseif(cond):` ... `@else:` ... `@end` | Conditional branching with property paths, negations (`!`), and comparisons | `@if (user.role == 'ADMIN'):` |
+| `@if(obj instanceof Type var):` | Java 17+ pattern matching with scoped variable binding | `@if (user instanceof AdminUser admin):` |
+| `@for(item : collection):` ... `@else:` ... `@end` | Collection & array iteration with empty-list fallback rendering | `@for (item : user.projects):` |
+| `@while(cond):` ... `@end` | Bounded condition loops with infinite-loop guard (`MAX_WHILE_ITERATIONS = 1000`) | `@while (queue.hasNext()):` |
+| `@switch(expr):` ... `@case(val):` ... `@default:` ... `@end` | Value pattern matching & polymorphic runtime type inspection | `@switch (typeof(account)):` |
+| `@try:` ... `@catch(err):` ... `@finally:` ... `@end` | Template error boundaries for component fault isolation and safe fallback UI | `@try: ... @catch(e):` |
+| `@continue` / `@break` | Early iteration skipping (`@continue`) or loop/switch termination (`@break`) | `@continue` / `@break` |
+
+---
+
+### 1. Conditional Branching & Pattern Matching (`@if`, `instanceof`)
+
+JSSR supports truthiness evaluation (`boolean`, non-blank `String`, non-zero `Number`, non-empty `Collection`/`Map`, `Optional.isPresent()`), relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), and Java 17+ `instanceof` pattern variable scope binding:
+
+```java
+public record UserHeaderCard(Object user) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div class="user-card font-sans p-4 bg-slate-900 rounded-xl">
+                <!-- Instanceof Pattern Matching with Automatic Local Scope Binding -->
+                @if (user instanceof com.jssr.e2e.app.model.AdminUser admin):
+                    <div class="admin-badge text-purple-400 font-semibold">
+                        🛡️ System Administrator: ${admin.name} (Permissions: ${admin.permissions})
+                    </div>
+                @elseif (user instanceof com.jssr.e2e.app.model.DeveloperUser dev):
+                    <div class="dev-badge text-blue-400">
+                        💻 Engineer: ${dev.name} (${dev.githubHandle} - ${dev.primaryLanguage})
+                    </div>
+                @else:
+                    <div class="guest-badge text-slate-400">
+                        👤 Guest Account
+                    </div>
+                @end
+            </div>
+            """;
+    }
+}
+```
+
+---
+
+### 2. Collection Iteration & Empty-List Fallbacks (`@for`, `@else`, `@continue`, `@break`)
+
+Iterate seamlessly over `Collection`, `Iterable`, `Object[]`, or `Optional<Collection>`. Use `@else:` to render fallback UI when collections are empty or null, and use `@continue` or `@break` for loop control:
+
+```java
+public record ProjectListCard(List<Project> projects) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div class="project-container p-6 bg-slate-950 text-slate-100 rounded-xl">
+                <h3 class="text-lg font-bold mb-4">Cluster Projects</h3>
+
+                <div class="project-list space-y-2">
+                    @for (p : projects):
+                        @if (p.priority < 0):
+                            @continue <!-- Skip internal debug projects -->
+                        @end
+                        @if (p.priority > 99):
+                            <div class="alert text-rose-500 font-bold">Priority Overflow (${p.name})</div>
+                            @break <!-- Halt iteration on overflow -->
+                        @end
+
+                        <div class="project-item flex justify-between p-3 bg-slate-900 rounded border border-slate-800">
+                            <span class="font-mono text-sm">${p.name}</span>
+                            <span class="text-xs px-2 py-1 bg-slate-800 text-slate-300">${p.status}</span>
+                        </div>
+                    @else:
+                        <!-- Rendered automatically when projects list is empty or null -->
+                        <div class="empty-state p-6 text-center text-slate-500 italic">
+                            No active cluster projects found.
+                        </div>
+                    @end
+                </div>
+            </div>
+            """;
+    }
+}
+```
+
+---
+
+### 3. Polymorphic Switch Statements & Runtime Type Reflection (`@switch`, `typeof`)
+
+Pattern match on strings, numbers, enums, or runtime class/record names using `typeof(object)`:
+
+```java
+public record RoleBadge(Object account) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div class="role-badge">
+                @switch (typeof(account)):
+                    @case (AdminUser):
+                        <span class="badge bg-purple-500/10 text-purple-400 font-bold px-3 py-1 rounded-full">
+                            System Administrator
+                        </span>
+                        @break
+                    @case (DeveloperUser):
+                        <span class="badge bg-blue-500/10 text-blue-400 font-bold px-3 py-1 rounded-full">
+                            Software Engineer
+                        </span>
+                        @break
+                    @default:
+                        <span class="badge bg-slate-800 text-slate-400 px-3 py-1 rounded-full">
+                            Guest Session
+                        </span>
+                @end
+            </div>
+            """;
+    }
+}
+```
+
+---
+
+### 4. Template Error Boundaries (`@try:`, `@catch(err):`, `@finally:`)
+
+Isolate sub-component or property evaluation failures without crashing the page (HTTP 500). `@try:` executes the primary markup, `@catch(e):` captures exceptions and exposes `${e.message}`, and `@finally:` is guaranteed to execute regardless of outcome:
+
+```java
+public record ResilientDashboardCard(String validStatus, boolean triggerFault) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div class="resilient-card p-6 bg-slate-900 text-slate-100 rounded-xl">
+                <div class="status mb-4 text-emerald-400 font-semibold">
+                    Primary Service Status: ${validStatus}
+                </div>
+
+                <!-- Template Error Boundary -->
+                @try:
+                    @if (triggerFault):
+                        <div class="unsafe-widget">${nonExistentMicroserviceProp}</div>
+                    @else:
+                        <div class="healthy-widget text-blue-400">
+                            ⚡ Secondary Analytics Connected (Latency: 12ms)
+                        </div>
+                    @end
+                @catch(e):
+                    <div class="widget-fallback p-4 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono rounded-lg">
+                        ⚠️ Microservice widget isolated cleanly (${e.message})
+                    </div>
+                @finally:
+                    <div class="audit-log text-slate-500 text-xs mt-2 font-mono">
+                        [Audit]: Telemetry session verified.
+                    </div>
+                @end
+            </div>
+            """;
+    }
+}
+```
+
+---
+
 JSSR enforces strict security and rendering rules for variable interpolation:
 
 1. **Default HTML Escaping**: Every `${...}` interpolation escapes special HTML characters by default:
