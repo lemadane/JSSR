@@ -58,7 +58,7 @@ public record SystemOverviewDashboardCard(
                 <div class="telemetry-widget-section">
                     @try:
                         @if (triggerTelemetryFault):
-                            <div class="faulty-box">${nonExistentSystemProperty}</div>
+                            @throw("Manual Telemetry Fault Triggered via @throw"):
                         @else:
                             <div class="healthy-telemetry p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-sm font-medium">
                                 🟢 Telemetry Sensor Cluster: Fully Operational (100% Signal Integrity)

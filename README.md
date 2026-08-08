@@ -75,6 +75,7 @@ JSSR provides a rich, native control flow engine designed for Java 17+ record te
 | `@while(cond):` ... `@end` | Bounded condition loops with infinite-loop guard (`MAX_WHILE_ITERATIONS = 1000`) | `@while (queue.hasNext()):` |
 | `@switch(expr):` ... `@case(val):` ... `@default:` ... `@end` | Value pattern matching & polymorphic runtime type inspection | `@switch (typeof(account)):` |
 | `@try:` ... `@catch(err):` ... `@finally:` ... `@end` | Template error boundaries for component fault isolation and safe fallback UI | `@try: ... @catch(e):` |
+| `@throw("msg")` / `@throw(new Ex("msg"))` / `@throw(ex)` | Intentionally raise custom or instantiated exceptions inside templates | `@throw(new IllegalStateException("Quorum Lost")):` |
 | `@continue` / `@break` | Early iteration skipping (`@continue`) or loop/switch termination (`@break`) | `@continue` / `@break` |
 
 ---
@@ -189,9 +190,9 @@ public record RoleBadge(Object account) implements JssrComponent {
 
 ---
 
-### 4. Template Error Boundaries (`@try:`, `@catch(err):`, `@finally:`)
+### 4. Template Error Boundaries & Intentional Exception Raising (`@try:`, `@catch(err):`, `@finally:`, `@throw`)
 
-Isolate sub-component or property evaluation failures without crashing the page (HTTP 500). `@try:` executes the primary markup, `@catch(e):` captures exceptions and exposes `${e.message}`, and `@finally:` is guaranteed to execute regardless of outcome:
+Isolate sub-component or property evaluation failures without crashing the page (HTTP 500), or intentionally trigger exceptions via `@throw(...)`:
 
 ```java
 public record ResilientDashboardCard(String validStatus, boolean triggerFault) implements JssrComponent {
@@ -207,7 +208,14 @@ public record ResilientDashboardCard(String validStatus, boolean triggerFault) i
                 <!-- Template Error Boundary -->
                 @try:
                     @if (triggerFault):
-                        <div class="unsafe-widget">${nonExistentMicroserviceProp}</div>
+                        <!-- Option A: Standard String Message -->
+                        @throw("Manual Telemetry Fault Triggered via @throw"):
+
+                        <!-- Option B: Exception Class Instantiation -->
+                        <!-- @throw(new java.lang.IllegalStateException("Cluster Quorum Lost")): -->
+
+                        <!-- Option C: Existing Property / Throwable Variable -->
+                        <!-- @throw(customThrowableVar): -->
                     @else:
                         <div class="healthy-widget text-blue-400">
                             ⚡ Secondary Analytics Connected (Latency: 12ms)
@@ -215,7 +223,7 @@ public record ResilientDashboardCard(String validStatus, boolean triggerFault) i
                     @end
                 @catch(e):
                     <div class="widget-fallback p-4 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono rounded-lg">
-                        ⚠️ Microservice widget isolated cleanly (${e.message})
+                        ⚠️ Microservice widget isolated cleanly (Type: ${typeof(e)} | ${e.message})
                     </div>
                 @finally:
                     <div class="audit-log text-slate-500 text-xs mt-2 font-mono">
@@ -227,6 +235,14 @@ public record ResilientDashboardCard(String validStatus, boolean triggerFault) i
     }
 }
 ```
+
+#### Exception Raising (`@throw`) Modes:
+
+| `@throw` Syntax | Behavior & Type Resolution | Resulting Exception |
+| :--- | :--- | :--- |
+| **`@throw("Custom message")`** | Throws standard `RuntimeException` with message string. | `new RuntimeException("Custom message")` |
+| **`@throw(new MyException("msg"))`** | Dynamically resolves and instantiates the specific `Throwable` class (e.g. `IllegalStateException`, `IllegalArgumentException`, or custom package class). | `new MyException("msg")` |
+| **`@throw(exVar)`** | Resolves property or variable `exVar` from local scope or record fields; if `Throwable`, throws it directly. | Throws underlying `Throwable` |
 
 ---
 

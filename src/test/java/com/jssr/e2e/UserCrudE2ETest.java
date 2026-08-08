@@ -747,8 +747,7 @@ class UserCrudE2ETest {
             mockMvc.perform(get("/dashboard?fault=true"))
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString("Sensor Isolation Failure: Captured exception")))
-                    .andExpect(content().string(containsString("Unknown JSSR interpolation property")))
-                    .andExpect(content().string(containsString("nonExistentSystemProperty")))
+                    .andExpect(content().string(containsString("Manual Telemetry Fault Triggered via @throw")))
                     .andExpect(content().string(containsString("[Audit Log]: Telemetry lifecycle scan completed at runtime."))); // @finally executed
         }
 

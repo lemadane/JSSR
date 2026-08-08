@@ -11,8 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Native Template Control Flow & Pattern Matching Release
 
 #### Added
-- **Native Template Control Flow Engine (`@if`, `@elseif`, `@else`, `@for`, `@while`, `@switch`, `@case`, `@default`, `@try`, `@catch`, `@finally`, `@continue`, `@break`, `@end`)**: Added template control flow directives inside HTML multiline text block templates with support for optional/required trailing colons (`@try:`, `@catch(err):`, `@finally:`).
-- **Template Error Boundaries (`@try: ... @catch(err): ... @finally: ... @end`)**: Added template fault-isolation boundaries that capture rendering/property-access exceptions and render fallback HTML without crashing the page (HTTP 500), guaranteeing `@finally:` block execution.
+- **Native Template Control Flow Engine (`@if`, `@elseif`, `@else`, `@for`, `@while`, `@switch`, `@case`, `@default`, `@try`, `@catch`, `@finally`, `@throw`, `@continue`, `@break`, `@end`)**: Added template control flow directives inside HTML multiline text block templates with support for optional/required trailing colons (`@try:`, `@catch(err):`, `@finally:`, `@throw("msg"):`).
+- **Template Error Boundaries & Exception Directives (`@try: ... @catch(err): ... @finally: ... @end` & `@throw(ex)`)**: Added template fault-isolation boundaries that capture rendering/property-access exceptions and render fallback HTML without crashing the page (HTTP 500), guaranteeing `@finally:` block execution, and added `@throw("message")` directive to intentionally raise exceptions in templates.
 - **Switch Statements & Reflection (`@switch (expr)` & `typeof(object)`)**: Pattern matching on values, strings, numbers, enums, or runtime class/record names (`typeof(object)`).
 - **Pattern Matching (`@if (object instanceof Type varName)`)**: Java 17+ `instanceof` type checking and scoped pattern variable binding.
 - **Loop Directives (`@for (item : list) ... @else ... @end` & `@while`)**: Iteration over collections/arrays/iterables with `@else` empty-list fallbacks, bounded `@while` loops (`MAX_WHILE_ITERATIONS = 1000`), `@continue`, and `@break`.

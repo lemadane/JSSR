@@ -163,4 +163,103 @@ public class TryCatchTest {
         assertTrue(faultHtml.contains("Colon Catch"));
         assertTrue(faultHtml.contains("Colon Finally"));
     }
+
+    public record ThrowInTryComp(boolean triggerThrow) implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div class="throw-card">
+                @try:
+                    @if (triggerThrow):
+                        @throw("Database Connection Failed"):
+                    @else:
+                        <div>Normal Processing</div>
+                    @end
+                @catch(err):
+                    <div class="throw-catch">Caught: ${err.message}</div>
+                @finally:
+                    <div class="throw-finally">Cleanup Done</div>
+                @end
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@throw inside @try: block triggers @catch(err): with custom error message")
+    void testThrowDirectiveInsideTryCatch() {
+        ThrowInTryComp cleanComp = new ThrowInTryComp(false);
+        String cleanHtml = cleanComp.render();
+        assertTrue(cleanHtml.contains("Normal Processing"));
+        assertFalse(cleanHtml.contains("throw-catch"));
+        assertTrue(cleanHtml.contains("Cleanup Done"));
+
+        ThrowInTryComp throwComp = new ThrowInTryComp(true);
+        String throwHtml = throwComp.render();
+        assertTrue(throwHtml.contains("throw-catch"));
+        assertTrue(throwHtml.contains("Caught: Database Connection Failed"));
+        assertTrue(throwHtml.contains("Cleanup Done"));
+    }
+
+    public record StandaloneThrowComp() implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div>
+                    @throw("Uncaught Template Exception"):
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@throw outside @try: block throws RuntimeException aborting render")
+    void testStandaloneThrowAbortsRender() {
+        StandaloneThrowComp comp = new StandaloneThrowComp();
+        RuntimeException ex = assertThrows(RuntimeException.class, comp::render);
+        assertTrue(ex.getMessage().contains("Uncaught Template Exception"));
+    }
+
+    public record NewExceptionThrowComp() implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div>
+                    @throw(new java.lang.IllegalArgumentException("Invalid Arguments Provided")):
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@throw(new IllegalArgumentException(...)) instantiates and throws exact exception type")
+    void testThrowNewExceptionInstantiation() {
+        NewExceptionThrowComp comp = new NewExceptionThrowComp();
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertEquals("Invalid Arguments Provided", ex.getMessage());
+    }
+
+    public record TryCatchNewExceptionComp() implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div class="try-new-ex">
+                @try:
+                    @throw(new IllegalStateException("Cluster Quorum Lost")):
+                @catch(e):
+                    <div class="caught-ex">Type: ${typeof(e)} | Message: ${e.message}</div>
+                @end
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@try: captures @throw(new IllegalStateException(...)) and renders typeof(e) and ${e.message}")
+    void testTryCatchCapturesNewExceptionInstantiation() {
+        TryCatchNewExceptionComp comp = new TryCatchNewExceptionComp();
+        String html = comp.render();
+        assertTrue(html.contains("Type: IllegalStateException"));
+        assertTrue(html.contains("Message: Cluster Quorum Lost"));
+    }
 }

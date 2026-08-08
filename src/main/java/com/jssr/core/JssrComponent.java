@@ -918,7 +918,7 @@ public interface JssrComponent {
     static String processControlFlow(JssrComponent component, Map<String, Object> localScope, String template) {
         if (component == null || template == null || template.isBlank() 
                 || (!template.contains("@if") && !template.contains("@for") && !template.contains("@while") 
-                    && !template.contains("@switch") && !template.contains("@try") 
+                    && !template.contains("@switch") && !template.contains("@try") && !template.contains("@throw")
                     && !template.contains("@continue") && !template.contains("@break"))) {
             return template == null ? "" : template;
         }
@@ -928,7 +928,7 @@ public interface JssrComponent {
     private static ControlFlowResult parseControlFlowBlocks(JssrComponent component, Map<String, Object> localScope, String text) {
         if (text == null || text.isEmpty() 
                 || (!text.contains("@if") && !text.contains("@for") && !text.contains("@while") 
-                    && !text.contains("@switch") && !text.contains("@try") 
+                    && !text.contains("@switch") && !text.contains("@try") && !text.contains("@throw")
                     && !text.contains("@continue") && !text.contains("@break"))) {
             return new ControlFlowResult(text == null ? "" : text, LoopSignal.NONE);
         }
@@ -950,6 +950,16 @@ public interface JssrComponent {
                 return new ControlFlowResult(result.toString(), LoopSignal.CONTINUE);
             } else if (text.startsWith("@break", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
                 return new ControlFlowResult(result.toString(), LoopSignal.BREAK);
+            } else if (text.startsWith("@throw", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
+                int openParen = text.indexOf('(', directiveIdx + 6);
+                int closeParen = (openParen != -1) ? findMatchingParen(text, openParen) : -1;
+                String throwExpr = (openParen != -1 && closeParen != -1) ? text.substring(openParen + 1, closeParen).trim() : "";
+                int endIndex = (closeParen != -1) ? closeParen + 1 : directiveIdx + 6;
+                if (endIndex < len && text.charAt(endIndex) == ':') {
+                    endIndex++;
+                }
+                executeThrowDirective(component, localScope, throwExpr);
+                curr = endIndex;
             } else if (text.startsWith("@if", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 3)) {
                 IfBlockResult blockResult = parseIfBlockAt(component, text, directiveIdx);
                 ControlFlowResult evalRes = evaluateIfBlockResult(component, localScope, blockResult);
@@ -1293,6 +1303,7 @@ public interface JssrComponent {
                     || (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4))
                     || (text.startsWith("@catch", curr) && isValidDirectiveBoundary(text, curr, 6))
                     || (text.startsWith("@finally", curr) && isValidDirectiveBoundary(text, curr, 8))
+                    || (text.startsWith("@throw", curr) && isValidDirectiveBoundary(text, curr, 6))
                     || (text.startsWith("@continue", curr) && isValidDirectiveBoundary(text, curr, 9))
                     || (text.startsWith("@break", curr) && isValidDirectiveBoundary(text, curr, 6))) {
                 return curr;
@@ -1300,6 +1311,120 @@ public interface JssrComponent {
             curr++;
         }
         return -1;
+    }
+
+    private static void executeThrowDirective(JssrComponent component, Map<String, Object> localScope, String throwExpr) {
+        if (throwExpr == null || throwExpr.isBlank()) {
+            throw new RuntimeException("Template error triggered via @throw in component " + component.getClass().getSimpleName());
+        }
+
+        String trimmed = throwExpr.trim();
+
+        // 1. Instantiation syntax: @throw(new ExceptionClass("message"))
+        if (trimmed.startsWith("new ")) {
+            int openParen = trimmed.indexOf('(');
+            int closeParen = trimmed.lastIndexOf(')');
+            if (openParen != -1 && closeParen > openParen) {
+                String className = trimmed.substring(4, openParen).trim();
+                String argStr = trimmed.substring(openParen + 1, closeParen).trim();
+                Object argVal = null;
+                if ((argStr.startsWith("\"") && argStr.endsWith("\"")) || (argStr.startsWith("'") && argStr.endsWith("'"))) {
+                    argVal = argStr.substring(1, argStr.length() - 1);
+                } else if (!argStr.isBlank()) {
+                    PropertyResult res = resolveProperty(component, localScope, argStr);
+                    if (res.found()) {
+                        argVal = res.value();
+                    } else {
+                        argVal = argStr;
+                    }
+                }
+
+                Throwable instantiated = instantiateException(className, argVal);
+                if (instantiated != null) {
+                    if (instantiated instanceof RuntimeException re) {
+                        throw re;
+                    } else if (instantiated instanceof Error err) {
+                        throw err;
+                    } else {
+                        throw new RuntimeException(instantiated.getMessage(), instantiated);
+                    }
+                }
+            }
+        }
+
+        // 2. String literal syntax: @throw("error message")
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            String msg = trimmed.substring(1, trimmed.length() - 1);
+            throw new RuntimeException(msg);
+        }
+
+        // 3. Property / Variable reference syntax: @throw(exVar)
+        PropertyResult propRes = resolveProperty(component, localScope, trimmed);
+        if (propRes.found()) {
+            Object val = propRes.value();
+            if (val instanceof Throwable t) {
+                if (t instanceof RuntimeException re) {
+                    throw re;
+                } else if (t instanceof Error err) {
+                    throw err;
+                }
+                throw new RuntimeException(t.getMessage(), t);
+            }
+            if (val != null) {
+                throw new RuntimeException(val.toString());
+            }
+        }
+
+        throw new RuntimeException(trimmed);
+    }
+
+    private static Throwable instantiateException(String className, Object arg) {
+        Class<?> clazz = resolveExceptionClass(className);
+        if (clazz == null || !Throwable.class.isAssignableFrom(clazz)) {
+            return null;
+        }
+
+        try {
+            if (arg != null) {
+                try {
+                    Constructor<?> ctor = clazz.getConstructor(arg.getClass());
+                    return (Throwable) ctor.newInstance(arg);
+                } catch (NoSuchMethodException ignored) {}
+
+                if (arg instanceof String) {
+                    try {
+                        Constructor<?> ctor = clazz.getConstructor(String.class);
+                        return (Throwable) ctor.newInstance(arg);
+                    } catch (NoSuchMethodException ignored) {}
+                }
+            }
+
+            try {
+                Constructor<?> ctor = clazz.getConstructor();
+                return (Throwable) ctor.newInstance();
+            } catch (NoSuchMethodException ignored) {}
+        } catch (Throwable ignored) {}
+
+        return null;
+    }
+
+    private static Class<?> resolveExceptionClass(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException ignored) {}
+
+        if (!className.contains(".")) {
+            try {
+                return Class.forName("java.lang." + className);
+            } catch (ClassNotFoundException ignored) {}
+            try {
+                return Class.forName("java.io." + className);
+            } catch (ClassNotFoundException ignored) {}
+            try {
+                return Class.forName("java.util." + className);
+            } catch (ClassNotFoundException ignored) {}
+        }
+        return null;
     }
 
     record TryBlockResult(String tryBody, String catchVar, String catchBody, boolean hasCatch, String finallyBody, boolean hasFinally, int endIndex) {}
