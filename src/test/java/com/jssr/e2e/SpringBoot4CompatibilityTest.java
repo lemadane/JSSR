@@ -2,12 +2,13 @@ package com.jssr.e2e;
 
 import com.jssr.core.JssrComponent;
 import com.jssr.core.SafeUrl;
+import com.jssr.e2e.app.MockMvcTestConfig;
 import com.jssr.e2e.app.TestApplication;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * integration function seamlessly across Spring Boot 3.x and 4.x runtime environments.
  */
 @SpringBootTest(classes = TestApplication.class)
-@AutoConfigureMockMvc
+@Import(MockMvcTestConfig.class)
 public class SpringBoot4CompatibilityTest {
 
     @Autowired

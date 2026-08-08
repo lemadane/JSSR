@@ -22,10 +22,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import com.jssr.e2e.app.MockMvcTestConfig;
+import org.springframework.context.annotation.Import;
 
 @SpringBootTest(classes = TestApplication.class)
-@AutoConfigureMockMvc
+@Import(MockMvcTestConfig.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class UserCrudE2ETest {
 
