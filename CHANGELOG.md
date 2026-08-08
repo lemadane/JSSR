@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 #### Fixed
 - **Template Exception Boundaries (`@try:` catch scoping)**: Changed `@try:` block error handling to catch `Exception` instead of `Throwable`. Critical JVM `Error` instances (`OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `ThreadDeath`, `AssertionError`) now escape `@try` blocks un-intercepted to bubble up to the application error handler container.
-- **Comprehensive URL Attribute Security (`URL_ATTRIBUTES` completeness)**: Expanded `URL_ATTRIBUTES` in `JssrComponent` and `FORBIDDEN_EXACT_ATTRIBUTES` in `HtmlAttribute` to mandate `SafeUrl` for `<object data="...">`, `<img srcset="...">`, `<link imagesrcset="...">`, `<object codebase="...">`, `<command icon="...">`, `<html manifest="...">`, `<head profile="...">`, `<blockquote cite="...">`, `<img longdesc="...">`, and `<img usemap="...">`.
+- **Multi-URL Attribute Security (`SafeSrcSet` & `SafeUrlList`)**: Added specialized type-safe wrappers `SafeSrcSet` (for comma-separated image candidates in `srcset` and `imagesrcset`) and `SafeUrlList` (for space-separated URLs in `ping`). Every candidate URL in `srcset` and `ping` is individually parsed and sanitized against dangerous schemes (`javascript:`, `data:`, `vbscript:`). Plain `String` and single `SafeUrl` values in `srcset`/`ping` attributes are strictly rejected.
 
 ---
 

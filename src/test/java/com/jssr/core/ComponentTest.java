@@ -894,11 +894,71 @@ class ComponentTest {
     }
 
     @Test
-    @DisplayName("HtmlAttribute forbids URL-valued attribute names like 'data', 'srcset', and 'codebase'")
+    @DisplayName("HtmlAttribute forbids URL-valued attribute names like 'data', 'srcset', 'ping', and 'codebase'")
     void testHtmlAttributeExpandedUrlBlocklist() {
         assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("data", "javascript:alert(1)"));
         assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("srcset", "javascript:alert(1)"));
+        assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("ping", "javascript:alert(1)"));
         assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("codebase", "javascript:alert(1)"));
+    }
+
+    public record UnsafeSrcSetComp(String srcset) implements JssrComponent {
+        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+    }
+
+    public record UnsafeSrcSetSafeUrlComp(SafeUrl srcset) implements JssrComponent {
+        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+    }
+
+    public record SafeSrcSetComp(SafeSrcSet srcset) implements JssrComponent {
+        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+    }
+
+    @Test
+    @DisplayName("srcset attributes strictly require SafeSrcSet and individually sanitize every comma-separated candidate URL")
+    void testSafeSrcSetMultiUrlSanitization() {
+        // Raw String and raw SafeUrl must be rejected
+        UnsafeSrcSetComp unsafe1 = new UnsafeSrcSetComp("https://safe.example/a.png 1x, javascript:alert(1) 2x");
+        assertThrows(IllegalArgumentException.class, unsafe1::render);
+
+        UnsafeSrcSetSafeUrlComp unsafe2 = new UnsafeSrcSetSafeUrlComp(SafeUrl.of("https://safe.example/a.png 1x, javascript:alert(1) 2x"));
+        assertThrows(IllegalArgumentException.class, unsafe2::render);
+
+        // SafeSrcSet must sanitize individual candidates
+        SafeSrcSet safeSet = SafeSrcSet.of("https://safe.example/a.png 1x, javascript:alert(1) 2x, /img/c.png 1000w");
+        SafeSrcSetComp comp = new SafeSrcSetComp(safeSet);
+
+        String html = comp.render();
+        assertTrue(html.contains("https://safe.example/a.png 1x"));
+        assertTrue(html.contains("about:blank 2x"));
+        assertTrue(html.contains("/img/c.png 1000w"));
+        assertFalse(html.contains("javascript:"));
+    }
+
+    public record UnsafePingComp(String urls) implements JssrComponent {
+        @Override public String template() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
+    }
+
+    public record SafePingComp(SafeUrlList urls) implements JssrComponent {
+        @Override public String template() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
+    }
+
+    @Test
+    @DisplayName("ping attributes strictly require SafeUrlList and individually sanitize space-separated URLs")
+    void testSafeUrlListPingSanitization() {
+        // Raw String must be rejected
+        UnsafePingComp unsafe = new UnsafePingComp("https://analytics.org/ping javascript:alert(1)");
+        assertThrows(IllegalArgumentException.class, unsafe::render);
+
+        // SafeUrlList must sanitize individual URLs
+        SafeUrlList list = SafeUrlList.of("https://analytics.org/ping javascript:alert(1) http://metrics.com");
+        SafePingComp comp = new SafePingComp(list);
+
+        String html = comp.render();
+        assertTrue(html.contains("https://analytics.org/ping"));
+        assertTrue(html.contains("about:blank"));
+        assertTrue(html.contains("http://metrics.com"));
+        assertFalse(html.contains("javascript:"));
     }
 }
 

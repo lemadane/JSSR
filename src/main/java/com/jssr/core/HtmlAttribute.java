@@ -11,7 +11,7 @@ public record HtmlAttribute(String name, String value) implements JssrComponent 
 
     private static final Set<String> FORBIDDEN_EXACT_ATTRIBUTES = Set.of(
         "style", "srcdoc", "href", "src", "action", "formaction", "poster", "xlink:href",
-        "data", "srcset", "imagesrcset", "codebase", "icon", "manifest", "profile", "cite", "longdesc", "usemap"
+        "data", "srcset", "imagesrcset", "ping", "codebase", "icon", "manifest", "profile", "cite", "longdesc", "usemap"
     );
 
     public HtmlAttribute {

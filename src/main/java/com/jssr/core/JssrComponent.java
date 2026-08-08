@@ -30,12 +30,12 @@ public interface JssrComponent {
     int MAX_RENDER_DEPTH = 100;
 
     /**
-     * List of HTML attribute names that strictly require a SafeUrl value type.
-     * Includes all URL-bearing HTML attributes (href, src, action, formaction, poster, data, srcset, imagesrcset, etc.).
+     * List of HTML attribute names that strictly require a SafeUrl, SafeSrcSet, or SafeUrlList value type.
+     * Includes all URL-bearing HTML attributes (href, src, action, formaction, poster, data, srcset, imagesrcset, ping, etc.).
      */
     Set<String> URL_ATTRIBUTES = Set.of(
         "href", "src", "action", "formaction", "poster", "xlink:href",
-        "data", "srcset", "imagesrcset", "codebase", "icon", "manifest", "profile", "cite", "longdesc", "usemap"
+        "data", "srcset", "imagesrcset", "ping", "codebase", "icon", "manifest", "profile", "cite", "longdesc", "usemap"
     );
 
     /**
@@ -276,7 +276,19 @@ public interface JssrComponent {
                                         + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
                             }
 
-                            if (URL_ATTRIBUTES.contains(lowerAttr)) {
+                            if ("srcset".equals(lowerAttr) || "imagesrcset".equals(lowerAttr)) {
+                                if (!(val instanceof SafeSrcSet) && valType != SafeSrcSet.class) {
+                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                            + "} inside multi-candidate image attribute '" + activeAttr + "' requires a SafeSrcSet field type instead of " 
+                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                }
+                            } else if ("ping".equals(lowerAttr)) {
+                                if (!(val instanceof SafeUrlList) && !(val instanceof SafeUrl) && valType != SafeUrlList.class && valType != SafeUrl.class) {
+                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                            + "} inside space-separated URL attribute 'ping' requires a SafeUrlList or SafeUrl field type instead of " 
+                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                }
+                            } else if (URL_ATTRIBUTES.contains(lowerAttr)) {
                                 if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
                                     throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                             + "} inside URL attribute '" + activeAttr + "' requires a SafeUrl field type instead of " 
@@ -289,6 +301,10 @@ public interface JssrComponent {
                                 formattedVal = "";
                             } else if (val instanceof SafeUrl safe) {
                                 formattedVal = escapeHtml(safe.render());
+                            } else if (val instanceof SafeSrcSet safeSet) {
+                                formattedVal = escapeHtml(safeSet.render());
+                            } else if (val instanceof SafeUrlList safeList) {
+                                formattedVal = escapeHtml(safeList.render());
                             } else if (val instanceof Optional<?> opt) {
                                 formattedVal = opt.map(o -> escapeHtml(o.toString())).orElse("");
                             } else {
