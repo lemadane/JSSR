@@ -28,14 +28,18 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
+      - name: Extract Tag Version
+        id: get_version
+        run: echo "TAG_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
       - name: Verify Spring Boot 3.4.2 Test Suite
-        run: ./gradlew test -PspringBootVersion=3.4.2 --info
+        run: ./gradlew test -PspringBootVersion=3.4.2 -Pversion=${TAG_VERSION} --info
 
       - name: Verify Spring Boot 4.0.0 Test Suite
-        run: ./gradlew test -PspringBootVersion=4.0.0 --info
+        run: ./gradlew test -PspringBootVersion=4.0.0 -Pversion=${TAG_VERSION} --info
 
       - name: Build & Publish Artifacts
-        run: ./gradlew build publishToMavenLocal
+        run: ./gradlew build publishToMavenLocal -Pversion=${TAG_VERSION}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
