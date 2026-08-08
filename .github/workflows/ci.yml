@@ -1,4 +1,4 @@
-name: JSSR Continuous Integration
+name: JSSR CI Pipeline
 
 on:
   push:
@@ -8,21 +8,26 @@ on:
 
 jobs:
   build:
+    name: Build & Test (Java ${{ matrix.java-version }})
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        java-version: [ '17', '21' ]
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: ${{ matrix.java-version }}
           distribution: 'temurin'
-          cache: gradle
+          cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
 
-      - name: Build and test with Gradle Wrapper
+      - name: Build & Run Test Suite
         run: ./gradlew test --info

@@ -86,7 +86,7 @@ JSSR enforces strict security and rendering rules for variable interpolation:
 
 10. **HTML Grammar Context Detection**: Interpolation uses an HTML state-machine parser to track tags, quoted attributes, comments, and script/style blocks.
 
-11. **Unsafe Context Rejection**: `${...}` interpolation inside `<script>`, `<style>`, or `<!-- comment -->` blocks is strictly forbidden and throws a clear `IllegalArgumentException` at render time.
+11. **Unsafe Context Rejection**: `${...}` interpolation inside `<script>`, `<style>`, HTML comment blocks (`<!-- ... -->`), inline event handler attributes (`onclick`, `onload`, `on*`), or inline `style="..."` attributes is strictly forbidden and throws a clear `IllegalArgumentException` at render time.
 
 12. **URL Attribute Protection & Sanitization**: `SafeUrl` wrappers enforce a strict scheme allowlist (`http`, `https`, `mailto`, `tel`, relative URLs) while sanitizing dangerous protocols (`javascript:`, `vbscript:`, `data:`) to `about:blank` and escaping quote characters.
 
@@ -496,10 +496,10 @@ JSSR/
 
 ## Running Tests
 
-Run unit and E2E integration tests:
+Run unit, E2E integration, and multi-threaded concurrency benchmark tests:
 
 ```bash
-gradle test
+./gradlew test
 ```
 
 ---

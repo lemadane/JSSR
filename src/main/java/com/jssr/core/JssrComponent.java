@@ -184,6 +184,8 @@ public interface JssrComponent {
         boolean inTag = false;
         char quoteChar = 0;
         String blockContext = null; // "script", "style", "comment"
+        String currentAttr = "";
+        StringBuilder attrBuf = new StringBuilder();
 
         while (i < len) {
             // Check for variable placeholder ${varName}
@@ -201,6 +203,18 @@ public interface JssrComponent {
                         } else if ("comment".equals(blockContext)) {
                             throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                     + "} is not allowed inside HTML comments.");
+                        }
+                    }
+
+                    if (inTag && !currentAttr.isEmpty()) {
+                        String lowerAttr = currentAttr.toLowerCase(Locale.ROOT);
+                        if (lowerAttr.startsWith("on")) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                    + "} is not allowed inside inline event handler attribute '" + currentAttr 
+                                    + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
+                        } else if ("style".equals(lowerAttr)) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                    + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
                         }
                     }
 
@@ -246,23 +260,37 @@ public interface JssrComponent {
                         if (next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '>') {
                             blockContext = "script";
                         }
-                    } else if (i + 5 < len && html.substring(i, Math.min(i + 6, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                    } else if (i + 5 < len && html.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
                         char next = i + 6 < len ? html.charAt(i + 6) : '>';
                         if (next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '>') {
                             blockContext = "style";
                         }
                     }
                     inTag = true;
+                    currentAttr = "";
+                    attrBuf.setLength(0);
                 } else if (inTag) {
                     if (quoteChar != 0) {
                         if (c == quoteChar) {
                             quoteChar = 0;
+                            currentAttr = "";
+                            attrBuf.setLength(0);
                         }
                     } else {
                         if (c == '"' || c == '\'') {
                             quoteChar = c;
+                            currentAttr = attrBuf.toString().trim();
+                        } else if (c == '=') {
+                            currentAttr = attrBuf.toString().trim();
                         } else if (c == '>') {
                             inTag = false;
+                            quoteChar = 0;
+                            currentAttr = "";
+                            attrBuf.setLength(0);
+                        } else if (Character.isWhitespace(c)) {
+                            attrBuf.setLength(0);
+                        } else {
+                            attrBuf.append(c);
                         }
                     }
                 }

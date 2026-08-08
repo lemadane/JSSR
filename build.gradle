@@ -1,7 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'org.springframework.boot' version '3.2.5' apply false
+    id 'org.springframework.boot' version '3.4.2' apply false
 }
 
 group = 'com.github.lemadane'
@@ -20,10 +20,12 @@ repositories {
 }
 
 dependencies {
-    compileOnly platform('org.springframework.boot:spring-boot-dependencies:3.2.5')
+    // Pure Core engine has ZERO runtime dependencies!
+    // Optional Spring MVC integration module dependencies (compileOnly):
+    compileOnly platform('org.springframework.boot:spring-boot-dependencies:3.4.2')
     compileOnly 'org.springframework.boot:spring-boot-starter-web'
     
-    testImplementation platform('org.springframework.boot:spring-boot-dependencies:3.2.5')
+    testImplementation platform('org.springframework.boot:spring-boot-dependencies:3.4.2')
     testImplementation 'org.springframework.boot:spring-boot-starter-web'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

@@ -463,6 +463,36 @@ class ComponentTest {
         assertTrue(ex.getMessage().contains("is not allowed inside HTML comments"));
     }
 
+    public record OnclickComponent(String action) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<button onclick=\"${action}\">Click</button>";
+        }
+    }
+
+    public record StyleAttrComponent(String css) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div style=\"${css}\">Content</div>";
+        }
+    }
+
+    @Test
+    @DisplayName("Interpolation inside inline event handler attributes (onclick) should throw an IllegalArgumentException")
+    void testOnclickInterpolationRejection() {
+        OnclickComponent comp = new OnclickComponent("alert(1)");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("is not allowed inside inline event handler attribute"));
+    }
+
+    @Test
+    @DisplayName("Interpolation inside inline style attributes (style=) should throw an IllegalArgumentException")
+    void testStyleAttrInterpolationRejection() {
+        StyleAttrComponent comp = new StyleAttrComponent("color: red");
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("is not allowed inside inline style attribute"));
+    }
+
     @Test
     @DisplayName("JssrComponent.trustedHtml and RawHtml.trustedHtml should create trusted unescaped HTML wrappers")
     void testTrustedHtmlHelper() {
