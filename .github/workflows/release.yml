@@ -28,7 +28,13 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Build & Test Artifacts
+      - name: Verify Spring Boot 3.4.2 Test Suite
+        run: ./gradlew test -PspringBootVersion=3.4.2 --info
+
+      - name: Verify Spring Boot 4.0.0 Test Suite
+        run: ./gradlew test -PspringBootVersion=4.0.0 --info
+
+      - name: Build & Publish Artifacts
         run: ./gradlew build publishToMavenLocal
 
       - name: Create GitHub Release
