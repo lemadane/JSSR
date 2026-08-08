@@ -151,9 +151,8 @@ public interface JssrComponent {
     }
 
     /**
-     * Interpolate ${fieldName} placeholders in HTML templates using a context-aware single-pass scanner.
-     * Enforces strict XSS context rules (free-standing attributes, unquoted attributes, SafeUrl requirement,
-     * framework attribute protection, srcdoc rejection, script/style/comment rejection).
+     * Interpolate ${fieldName} placeholders in HTML templates using a context-aware state machine scanner.
+     * Robustly tracks tag attribute names across whitespace around '=' and enforces strict XSS context rules.
      *
      * @param component The component instance
      * @param html HTML template string containing ${fieldName} placeholders
@@ -177,6 +176,8 @@ public interface JssrComponent {
         char quoteChar = 0;
         String blockContext = null; // "script", "style", "comment"
         String currentAttr = "";
+        String pendingAttr = "";
+        boolean seenEquals = false;
         StringBuilder attrBuf = new StringBuilder();
 
         while (i < len) {
@@ -209,7 +210,16 @@ public interface JssrComponent {
                     Class<?> valType = propRes.type();
 
                     if (inTag) {
-                        if (quoteChar == 0 && currentAttr.isEmpty()) {
+                        String activeAttr = currentAttr;
+                        if (activeAttr.isEmpty() && seenEquals && !pendingAttr.isEmpty()) {
+                            activeAttr = pendingAttr;
+                        }
+
+                        if (val instanceof RawHtml) {
+                            throw new IllegalArgumentException("RawHtml cannot be interpolated inside an HTML attribute. Use safe string values, SafeUrl, BooleanAttribute, or HtmlAttribute.");
+                        }
+
+                        if (quoteChar == 0 && activeAttr.isEmpty()) {
                             // Free-standing attribute position inside tag, e.g. <input ${extra} />
                             if (val instanceof BooleanAttribute ba) {
                                 sb.append(ba.template());
@@ -226,13 +236,13 @@ public interface JssrComponent {
                             }
                             i = end + 1;
                             continue;
-                        } else if (quoteChar == 0 && !currentAttr.isEmpty()) {
-                            // Unquoted attribute value position, e.g. title=${title}
+                        } else if (quoteChar == 0 && !activeAttr.isEmpty()) {
+                            // Unquoted attribute value position, e.g. title=${title} or title = ${title}
                             throw new IllegalArgumentException("JSSR interpolation in an unquoted HTML attribute is forbidden. Quote the attribute value: " 
-                                    + currentAttr + "=\"${" + varName + "}\"");
+                                    + activeAttr + "=\"${" + varName + "}\"");
                         } else {
-                            // Quoted attribute value position, e.g. title="${title}"
-                            String lowerAttr = currentAttr.toLowerCase(Locale.ROOT);
+                            // Quoted attribute value position, e.g. title="${title}" or href = "${title}"
+                            String lowerAttr = activeAttr.toLowerCase(Locale.ROOT);
 
                             if ("srcdoc".equals(lowerAttr)) {
                                 throw new IllegalArgumentException("JSSR interpolation ${" + varName 
@@ -241,13 +251,13 @@ public interface JssrComponent {
 
                             if (lowerAttr.startsWith("x-") || lowerAttr.startsWith("@") || lowerAttr.startsWith(":") || lowerAttr.startsWith("hx-on")) {
                                 throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                        + "} is not allowed inside executable framework attribute '" + currentAttr 
+                                        + "} is not allowed inside executable framework attribute '" + activeAttr 
                                         + "'. Use safe server-side state or explicit expression APIs.");
                             }
 
                             if (lowerAttr.startsWith("on")) {
                                 throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                        + "} is not allowed inside inline event handler attribute '" + currentAttr 
+                                        + "} is not allowed inside inline event handler attribute '" + activeAttr 
                                         + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
                             }
 
@@ -259,7 +269,7 @@ public interface JssrComponent {
                             if (URL_ATTRIBUTES.contains(lowerAttr)) {
                                 if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
                                     throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                            + "} inside URL attribute '" + currentAttr + "' requires a SafeUrl field type instead of " 
+                                            + "} inside URL attribute '" + activeAttr + "' requires a SafeUrl field type instead of " 
                                             + (valType != null ? valType.getSimpleName() : "String") + ".");
                                 }
                             }
@@ -269,8 +279,6 @@ public interface JssrComponent {
                                 formattedVal = "";
                             } else if (val instanceof SafeUrl safe) {
                                 formattedVal = escapeHtml(safe.render());
-                            } else if (val instanceof RawHtml raw) {
-                                formattedVal = raw.value() == null ? "" : raw.value();
                             } else if (val instanceof Optional<?> opt) {
                                 formattedVal = opt.map(o -> escapeHtml(o.toString())).orElse("");
                             } else {
@@ -343,31 +351,51 @@ public interface JssrComponent {
                     }
                     inTag = true;
                     currentAttr = "";
+                    pendingAttr = "";
+                    seenEquals = false;
                     attrBuf.setLength(0);
                 } else if (inTag) {
                     if (quoteChar != 0) {
                         if (c == quoteChar) {
                             quoteChar = 0;
                             currentAttr = "";
+                            pendingAttr = "";
+                            seenEquals = false;
                             attrBuf.setLength(0);
                         }
                     } else {
                         if (c == '"' || c == '\'') {
                             quoteChar = c;
-                            currentAttr = attrBuf.toString().trim();
+                            if (seenEquals && !pendingAttr.isEmpty()) {
+                                currentAttr = pendingAttr;
+                            } else if (!attrBuf.toString().isBlank()) {
+                                currentAttr = attrBuf.toString().trim();
+                            }
+                            attrBuf.setLength(0);
                         } else if (c == '=') {
-                            currentAttr = attrBuf.toString().trim();
+                            if (!seenEquals) {
+                                if (!attrBuf.toString().isBlank()) {
+                                    pendingAttr = attrBuf.toString().trim();
+                                    attrBuf.setLength(0);
+                                }
+                                seenEquals = true;
+                            }
                         } else if (c == '>') {
                             inTag = false;
                             quoteChar = 0;
                             currentAttr = "";
+                            pendingAttr = "";
+                            seenEquals = false;
                             attrBuf.setLength(0);
                         } else if (Character.isWhitespace(c)) {
-                            if (!attrBuf.toString().isBlank()) {
-                                currentAttr = "";
+                            if (!seenEquals && !attrBuf.toString().isBlank()) {
+                                pendingAttr = attrBuf.toString().trim();
                                 attrBuf.setLength(0);
                             }
                         } else {
+                            if (!seenEquals && !pendingAttr.isEmpty() && attrBuf.length() == 0) {
+                                pendingAttr = "";
+                            }
                             attrBuf.append(c);
                         }
                     }

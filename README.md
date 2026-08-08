@@ -188,7 +188,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.lemadane:JSSR:v0.1.0'
+    implementation 'com.github.lemadane:JSSR:v1.0.0'
 }
 ```
 
@@ -208,19 +208,18 @@ Add the JitPack repository and dependency to `pom.xml`:
     <dependency>
         <groupId>com.github.lemadane</groupId>
         <artifactId>JSSR</artifactId>
-        <version>v0.1.0</version>
+        <version>v1.0.0</version>
     </dependency>
 </dependencies>
 ```
 
 ### Publishing Releases on GitHub
 
-To publish a official version tag (e.g. `v0.1.0`) on GitHub:
+To publish an official version tag (e.g. `v1.0.0`) on GitHub:
 
 ```bash
-git tag -a v0.1.0 -m "Release v0.1.0"
-
-git push origin v0.1.0
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
 ```
 
 ---

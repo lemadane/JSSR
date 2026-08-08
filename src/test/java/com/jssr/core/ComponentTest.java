@@ -744,6 +744,55 @@ class ComponentTest {
         }
     }
 
+    public record WhitespaceHrefLink(String href) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<a href = \"${href}\">Link</a>";
+        }
+    }
+
+    public record WhitespaceOnclickComponent(String action) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<button onclick \t = \n \"${action}\">Click</button>";
+        }
+    }
+
+    public record WhitespaceStyleComponent(String css) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div style = \"${css}\">Text</div>";
+        }
+    }
+
+    public record WhitespaceSrcdocComponent(String html) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<iframe srcdoc = \"${html}\"></iframe>";
+        }
+    }
+
+    public record WhitespaceAlpineComponent(String expr) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div x-init = \"${expr}\">Text</div>";
+        }
+    }
+
+    public record WhitespaceHtmxComponent(String handler) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<button hx-on:click = \"${handler}\">Text</button>";
+        }
+    }
+
+    public record RawHtmlAttrComponent(RawHtml title) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div title=\"${title}\">Text</div>";
+        }
+    }
+
     @Test
     @DisplayName("Unknown template variable placeholders should fail fast with explicit IllegalArgumentException")
     void testUnknownVariableFailFast() {
@@ -751,5 +800,77 @@ class ComponentTest {
         Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
         assertTrue(ex.getMessage().contains("Unknown JSSR interpolation property '${usernmae}'"));
     }
+
+    @Test
+    @DisplayName("Whitespace around '=' should NOT bypass attribute security context detection")
+    void testWhitespaceAroundEqualsAttributeProtection() {
+        // href = "${href}" with raw String should require SafeUrl
+        Exception ex1 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceHrefLink("javascript:alert(1)").render());
+        assertTrue(ex1.getMessage().contains("requires a SafeUrl field type"));
+
+        // onclick = "${action}" should be rejected
+        Exception ex2 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceOnclickComponent("alert(1)").render());
+        assertTrue(ex2.getMessage().contains("inline event handler attribute"));
+
+        // style = "${css}" should be rejected
+        Exception ex3 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceStyleComponent("color:red").render());
+        assertTrue(ex3.getMessage().contains("inline style attribute"));
+
+        // srcdoc = "${html}" should be rejected
+        Exception ex4 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceSrcdocComponent("<script>alert(1)</script>").render());
+        assertTrue(ex4.getMessage().contains("inside 'srcdoc' attribute is forbidden"));
+
+        // x-init = "${expr}" should be rejected
+        Exception ex5 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceAlpineComponent("alert(1)").render());
+        assertTrue(ex5.getMessage().contains("executable framework attribute"));
+
+        // hx-on:click = "${handler}" should be rejected
+        Exception ex6 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceHtmxComponent("alert(1)").render());
+        assertTrue(ex6.getMessage().contains("executable framework attribute"));
+    }
+
+    @Test
+    @DisplayName("BooleanAttribute name must be strictly validated against standard HTML boolean attribute allowlist")
+    void testBooleanAttributeNameAllowlistValidation() {
+        // Valid boolean attributes
+        assertDoesNotThrow(() -> BooleanAttribute.of("checked", true));
+        assertDoesNotThrow(() -> BooleanAttribute.of("disabled", true));
+        assertDoesNotThrow(() -> BooleanAttribute.of("selected", true));
+
+        // Invalid / injected boolean attribute names
+        Exception ex1 = assertThrows(IllegalArgumentException.class, () -> BooleanAttribute.of("autofocus onfocus=alert(1)", true));
+        assertTrue(ex1.getMessage().contains("Invalid or unsafe boolean HTML attribute name"));
+
+        Exception ex2 = assertThrows(IllegalArgumentException.class, () -> BooleanAttribute.of("onclick", true));
+        assertTrue(ex2.getMessage().contains("Invalid or unsafe boolean HTML attribute name"));
+    }
+
+    @Test
+    @DisplayName("HtmlAttribute name must be validated against spaces/special chars and security blocklist")
+    void testHtmlAttributeNameValidationAndBlocklist() {
+        // Valid custom/data attributes
+        assertDoesNotThrow(() -> HtmlAttribute.of("data-role", "admin"));
+        assertDoesNotThrow(() -> HtmlAttribute.of("aria-label", "Close"));
+        assertDoesNotThrow(() -> HtmlAttribute.of("title", "Help text"));
+
+        // Forbidden attribute names: href (URL), onclick, x-init, spaces/attribute injection
+        Exception ex1 = assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("href", "javascript:alert(1)"));
+        assertTrue(ex1.getMessage().contains("Unsafe HTML attribute name 'href'"));
+
+        Exception ex2 = assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("onclick", "alert(1)"));
+        assertTrue(ex2.getMessage().contains("Unsafe HTML attribute name 'onclick'"));
+
+        Exception ex3 = assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("data-x onmouseover", "alert(1)"));
+        assertTrue(ex3.getMessage().contains("Invalid HTML attribute name"));
+    }
+
+    @Test
+    @DisplayName("RawHtml cannot be interpolated inside an HTML tag attribute")
+    void testRawHtmlInAttributeRejection() {
+        RawHtmlAttrComponent comp = new RawHtmlAttrComponent(RawHtml.of("\" onmouseover=\"alert(1)"));
+        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        assertTrue(ex.getMessage().contains("RawHtml cannot be interpolated inside an HTML attribute"));
+    }
 }
+
 
