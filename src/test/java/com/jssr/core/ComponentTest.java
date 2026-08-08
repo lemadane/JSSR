@@ -506,4 +506,67 @@ class ComponentTest {
             assertTrue(html.contains("&lt;") || html.contains("&gt;") || html.contains("&quot;") || html.contains("&#39;"));
         }
     }
+
+    public record CheckboxForm(String activeChecked, String notificationsChecked) implements JssrComponent {
+        public static CheckboxForm of(boolean active, boolean notifications) {
+            return new CheckboxForm(active ? "checked" : "", notifications ? "checked" : "");
+        }
+
+        @Override
+        public String template() {
+            return """
+                <form>
+                    <input type="checkbox" name="active" value="true" ${activeChecked} />
+                    <input type="checkbox" name="notifications" value="true" ${notificationsChecked} />
+                </form>
+                """;
+        }
+    }
+
+    public record RadioForm(String adminChecked, String userChecked) implements JssrComponent {
+        public static RadioForm of(String selectedRole) {
+            return new RadioForm(
+                "ADMIN".equalsIgnoreCase(selectedRole) ? "checked" : "",
+                "USER".equalsIgnoreCase(selectedRole) ? "checked" : ""
+            );
+        }
+
+        @Override
+        public String template() {
+            return """
+                <form>
+                    <input type="radio" name="role" value="ADMIN" ${adminChecked} />
+                    <input type="radio" name="role" value="USER" ${userChecked} />
+                </form>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("Checkbox components should render checked attribute based on boolean state")
+    void testCheckboxFormRendering() {
+        CheckboxForm form1 = CheckboxForm.of(true, false);
+        String html1 = form1.render();
+        assertTrue(html1.contains("name=\"active\" value=\"true\" checked"));
+        assertFalse(html1.contains("name=\"notifications\" value=\"true\" checked"));
+
+        CheckboxForm form2 = CheckboxForm.of(false, true);
+        String html2 = form2.render();
+        assertFalse(html2.contains("name=\"active\" value=\"true\" checked"));
+        assertTrue(html2.contains("name=\"notifications\" value=\"true\" checked"));
+    }
+
+    @Test
+    @DisplayName("Radio button components should render checked attribute based on selected String/Enum state")
+    void testRadioFormRendering() {
+        RadioForm adminForm = RadioForm.of("ADMIN");
+        String htmlAdmin = adminForm.render();
+        assertTrue(htmlAdmin.contains("value=\"ADMIN\" checked"));
+        assertFalse(htmlAdmin.contains("value=\"USER\" checked"));
+
+        RadioForm userForm = RadioForm.of("USER");
+        String htmlUser = userForm.render();
+        assertFalse(htmlUser.contains("value=\"ADMIN\" checked"));
+        assertTrue(htmlUser.contains("value=\"USER\" checked"));
+    }
 }

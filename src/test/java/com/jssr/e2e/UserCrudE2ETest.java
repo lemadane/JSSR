@@ -382,4 +382,63 @@ class UserCrudE2ETest {
                     .andExpect(content().string(containsString("User &#39;User&#39; removed from system.")));
         }
     }
+
+    @Nested
+    @DisplayName("9. Radio Buttons & Checkboxes E2E Form Control Tests")
+    class FormControlsRadioAndCheckboxTests {
+
+        public record AdvancedForm(String subscribeChecked, String termsChecked, String freeChecked, String proChecked, String enterpriseChecked) implements JssrComponent {
+            public static AdvancedForm of(boolean subscribe, boolean acceptTerms, String plan) {
+                return new AdvancedForm(
+                    subscribe ? "checked" : "",
+                    acceptTerms ? "checked" : "",
+                    "FREE".equalsIgnoreCase(plan) ? "checked" : "",
+                    "PRO".equalsIgnoreCase(plan) ? "checked" : "",
+                    "ENTERPRISE".equalsIgnoreCase(plan) ? "checked" : ""
+                );
+            }
+
+            @Override
+            public String template() {
+                return """
+                    <form id="advanced-form">
+                        <label>
+                            <input type="checkbox" name="subscribe" value="true" ${subscribeChecked} /> Subscribe to Newsletter
+                        </label>
+                        <label>
+                            <input type="checkbox" name="acceptTerms" value="true" ${termsChecked} /> Accept Terms
+                        </label>
+
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="plan" value="FREE" ${freeChecked} /> Free Plan
+                            </label>
+                            <label>
+                                <input type="radio" name="plan" value="PRO" ${proChecked} /> Pro Plan
+                            </label>
+                            <label>
+                                <input type="radio" name="plan" value="ENTERPRISE" ${enterpriseChecked} /> Enterprise Plan
+                            </label>
+                        </div>
+                    </form>
+                    """;
+            }
+        }
+
+        @Test
+        @DisplayName("Radio buttons and Checkboxes should render correct checked state for form inputs")
+        void testFormControlsCheckedState() {
+            AdvancedForm form = AdvancedForm.of(true, false, "PRO");
+            String html = form.render();
+
+            // Checkbox assertions
+            assertTrue(html.contains("name=\"subscribe\" value=\"true\" checked"));
+            assertFalse(html.contains("name=\"acceptTerms\" value=\"true\" checked"));
+
+            // Radio button assertions
+            assertFalse(html.contains("value=\"FREE\" checked"));
+            assertTrue(html.contains("value=\"PRO\" checked"));
+            assertFalse(html.contains("value=\"ENTERPRISE\" checked"));
+        }
+    }
 }

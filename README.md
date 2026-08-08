@@ -1,6 +1,7 @@
 # JSSR (Java Server-Side Rendering)
 
-A high-performance, zero-dependency Java server-side rendering framework and UI library. JSSR brings a strongly typed, Record-based component model (`public record MyComponent(...) implements JssrComponent`) to Java 17+, serving as an immutable companion library for HTMX, Alpine.js, and Spring Boot MVC.
+> [!NOTE]
+> **No Node.js or JavaScript Runtime Embedding**: JSSR brings the **React-like component architecture** (JSX-style tags, immutable Record props, nested component trees) to native Java 17+ in **100% pure Java**—with zero dependencies on Node.js, V8 engines, or JavaScript runtimes.
 
 ---
 
@@ -8,13 +9,18 @@ A high-performance, zero-dependency Java server-side rendering framework and UI 
 
 Traditional Java web development forces developers into a hard choice between traditional template engines (Thymeleaf, JSP, FreeMarker) with untyped HTML templates, or heavy Single Page Application (SPA) frameworks (React, Next.js, Vue) requiring complex Node.js build pipelines and duplicate DTO definitions.
 
-JSSR combines the best of both worlds by bringing React-like component architecture to modern Java 17+:
+- **React-Like Developer Experience in 100% Pure Java**: JSSR brings the component-driven mental model of React (JSX-style tags, immutable Record props, nested component trees) to modern Java 17+ without embedding Node.js, V8 engines, or JavaScript runtimes.
 
 - **Strongly Typed Components with Runtime-Validated Template Props**: Every UI component is an immutable Java Record. Direct Java component instantiations are 100% compiler verified, and JSX-style template props are validated at runtime to reject typos and missing attributes.
+
 - **Native Java 17 Multiline Text Blocks with ${fieldName} Interpolation**: HTML templates use native Java text blocks (`"""..."""`). Placeholders like `${name}` or `${role}` are automatically interpolated from Record fields with automatic default HTML escaping (`&`, `<`, `>`, `"`, `'`).
+
 - **Safe URL & Raw HTML Protection**: Use `SafeUrl` wrappers to automatically sanitize dangerous URL schemes (`javascript:`, `vbscript:`, `data:`), and `RawHtml` to explicitly bypass HTML escaping for trusted content.
+
 - **Declarative JSX-Style & Paired Component Trees**: Compose self-closing (`<UserCard name="Sarah" />`) or paired (`<Card><h1>Header</h1></Card>`) component trees in Java. JSSR resolves custom tags, passes inner content as `children` props, and renders nested component trees recursively with depth recursion protection.
+
 - **Micro-Granular SSR for HTMX & Alpine.js**: Every component is an independent executable unit. Spring MVC controllers can return single component instances (`return new UserRow(user);`) for microsecond HTMX swaps.
+
 - **Zero-Dependency Core Engine**: The core JSSR rendering engine (`com.jssr.core.JssrComponent`) is written in 100% pure standard Java with zero mandatory third-party dependencies.
 
 ### Quick Comparison
@@ -61,23 +67,38 @@ JSSR enforces strict security and rendering rules for variable interpolation:
    - `>` $\rightarrow$ `&gt;`
    - `"` $\rightarrow$ `&quot;`
    - `'` $\rightarrow$ `&#39;`
+
 2. **HTML Text Context Handling**: Text node values like `Hello <strong>World</strong>` in `<p>${message}</p>` safely render as `<p>Hello &lt;strong&gt;World&lt;/strong&gt;</p>`.
+
 3. **HTML Attribute Context Protection**: Quotes in attributes like `<input value="${value}">` or `<div title='${title}'>` are converted to `&quot;` and `&#39;`, preventing attribute breakout XSS attacks.
+
 4. **Arbitrary Structure Prevention**: Injected strings containing tags (e.g. `</div><script>alert(1)</script>`) are escaped into text entities so interpolation can never alter the outer HTML tag structure.
+
 5. **Explicit Trusted HTML (`RawHtml`)**: Trusted pre-rendered HTML must explicitly use the `RawHtml.of("<b>bold</b>")` wrapper type. Arbitrary `String` values are never trusted by default.
+
 6. **Nested Component Rendering**: Fields typed as `JssrComponent` (child components and fragments) render their DOM structure recursively without being text-escaped.
+
 7. **Null Value Handling**: `null` values produce empty output (`""`) rather than rendering literal `"null"` text (e.g. `<span>${nullVal}</span>` renders `<span></span>`).
+
 8. **Primitive & Scalar Preservation**: Numbers (`42`, `3.14`), booleans (`true`), enums, and scalar values render as clean, un-mangled text.
+
 9. **Single-Pass Escaping & Double Escaping Prevention**: Interpolation uses a single-pass scanner, guaranteeing values like `Tom & Jerry` are escaped exactly once to `Tom &amp; Jerry` (never `Tom &amp;amp; Jerry`).
+
 10. **HTML Grammar Context Detection**: Interpolation uses an HTML state-machine parser to track tags, quoted attributes, comments, and script/style blocks.
+
 11. **Unsafe Context Rejection**: `${...}` interpolation inside `<script>`, `<style>`, or `<!-- comment -->` blocks is strictly forbidden and throws a clear `IllegalArgumentException` at render time.
+
 12. **URL Attribute Protection & Sanitization**: `SafeUrl` wrappers enforce a strict scheme allowlist (`http`, `https`, `mailto`, `tel`, relative URLs) while sanitizing dangerous protocols (`javascript:`, `vbscript:`, `data:`) to `about:blank` and escaping quote characters.
+
 13. **Standard Java 17 Syntax Preservation**: Developers write native Java 17 multiline text blocks (`"""..."""`) and `${fieldName}` syntax without extra pre-processors, macros, or custom DSL extensions.
+
 14. **Simple 3-Pattern Developer API**:
     - *Normal data* (`String`, numbers, booleans) $\rightarrow$ automatically safe and escaped.
     - *Child components* (`JssrComponent`) $\rightarrow$ rendered recursively as raw DOM markup.
     - *Trusted HTML* (`RawHtml.trustedHtml(html)`) $\rightarrow$ explicitly marked raw HTML.
+
 15. **Strong Value Typing (No String Guessing)**: Unescaped markup rendering is strictly type-bound (`RawHtml` or `JssrComponent`). Plain Java `String` values are **always** treated as untrusted data and are never pattern-guessed (e.g. checking if a string starts with `<`).
+
 16. **Comprehensive XSS Test Suite**: Protected by automated regression tests covering high-risk XSS attack vectors (`<script>`, `<img onerror>`, quote breakout, `</textarea>`).
 
 ---
@@ -145,7 +166,9 @@ The browser displays the literal text `Hello <script>alert(1)</script>` on scree
 Because JSSR components are Java Records, they are **immutable and stateless**. Components are never mutated in-place on the server. Data flows through a 3-step unidirectional cycle:
 
 1. **Form Rendering (Server to Browser)**: The controller instantiates an immutable record `new UserForm("Sarah Connor", ...)` which renders an HTML form containing pre-filled input values (`<input name="name" value="Sarah Connor" />`).
+
 2. **User Interaction (Browser)**: The user modifies the input field in their browser (e.g. typing `"Sarah Connor Revised"`) and submits the form via HTMX or standard HTTP POST.
+
 3. **Controller Response (Server)**: The Spring MVC controller handler receives the HTTP request parameters (`@RequestParam("name") String name`), updates database entities, and instantiates a **new Record component instance** (`new UserList(...)` or `new UserRow(...)`) with the updated data.
 
 ---
@@ -196,6 +219,7 @@ To publish a official version tag (e.g. `v0.1.0`) on GitHub:
 
 ```bash
 git tag -a v0.1.0 -m "Release v0.1.0"
+
 git push origin v0.1.0
 ```
 
@@ -305,6 +329,141 @@ public class UserController {
     }
 }
 ```
+
+---
+
+## Working with HTML Forms & Spring MVC
+
+JSSR makes handling HTML form submission, input pre-filling, validation error feedback, and HTMX swaps seamless and type-safe.
+
+### 1. Form Component Definition
+
+Define the form UI as an immutable `JssrComponent` Record:
+
+```java
+package com.example.demo.components;
+
+import com.jssr.core.JssrComponent;
+
+public record UserForm(String name, String email, String errorMessage) implements JssrComponent {
+
+    @Override
+    public String template() {
+        return """
+            <div id="form-container" class="max-w-md mx-auto p-6 bg-white rounded-xl shadow-md">
+                <h2 class="text-xl font-bold mb-4">Create User Account</h2>
+                
+                <p class="error text-red-500 font-semibold">${errorMessage}</p>
+                
+                <form hx-post="/users" hx-target="#form-container" hx-swap="outerHTML" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Name</label>
+                        <input type="text" name="name" value="${name}" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Email</label>
+                        <input type="email" name="email" value="${email}" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
+                    </div>
+                    
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        Create Account
+                    </button>
+                </form>
+            </div>
+            """;
+    }
+}
+```
+
+### 2. Spring MVC Form Controller Handler
+
+Spring MVC handlers receive HTTP request params and return updated `JssrComponent` instances:
+
+```java
+package com.example.demo.controllers;
+
+import com.jssr.core.JssrComponent;
+import com.example.demo.components.UserForm;
+import com.example.demo.components.UserCard;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.*;
+
+@Controller
+@ResponseBody
+@RequestMapping(produces = "text/html;charset=UTF-8")
+public class UserFormController {
+
+    // GET /users/new -> Renders blank initial form
+    @GetMapping("/users/new")
+    public JssrComponent renderNewUserForm() {
+        return new UserForm("", "", "");
+    }
+
+    // POST /users -> Processes submission & handles validation feedback
+    @PostMapping("/users")
+    public JssrComponent processUserForm(
+            @RequestParam("name") String name,
+            @RequestParam("email") String email) {
+        
+        // Validation check
+        if (email.contains("existing")) {
+            // Re-render form with pre-filled inputs and error message
+            return new UserForm(name, email, "An account with this email already exists.");
+        }
+
+        // Success -> Return created user card component (HTMX partial swap)
+        return new UserCard(name, "User", true);
+    }
+}
+```
+
+### 3. Handling Checkboxes and Radio Buttons
+
+Checkbox and Radio Button `checked` state attributes are handled cleanly by supplying calculated strings or Record component properties:
+
+```java
+public record PreferencesForm(
+    String subscribeChecked, 
+    String adminRoleChecked, 
+    String userRoleChecked
+) implements JssrComponent {
+
+    public static PreferencesForm of(boolean subscribe, String role) {
+        return new PreferencesForm(
+            subscribe ? "checked" : "",
+            "ADMIN".equalsIgnoreCase(role) ? "checked" : "",
+            "USER".equalsIgnoreCase(role) ? "checked" : ""
+        );
+    }
+
+    @Override
+    public String template() {
+        return """
+            <form hx-post="/preferences">
+                <!-- Checkbox -->
+                <label>
+                    <input type="checkbox" name="subscribe" value="true" ${subscribeChecked} />
+                    Subscribe to Newsletter
+                </label>
+                
+                <!-- Radio Group -->
+                <label>
+                    <input type="radio" name="role" value="ADMIN" ${adminRoleChecked} /> Admin
+                </label>
+                <label>
+                    <input type="radio" name="role" value="USER" ${userRoleChecked} /> User
+                </label>
+            </form>
+            """;
+    }
+}
+```
+
+### Key Form Protection Features in JSSR:
+* **Attribute Quote Protection**: Pre-filled values inside `<input value="${name}">` containing quotes (e.g. `Sarah "The Boss" Connor`) are automatically converted to `&quot;`, keeping the input value safely enclosed inside the attribute quotes.
+* **Stateless Unidirectional Flow**: Input state is managed via immutable Java Record components created by Spring controllers.
+* **Microsecond HTMX Partial Swaps**: Form submission re-renders only the target HTML component fragment (`#form-container`) without full page reloads.
 
 ---
 
