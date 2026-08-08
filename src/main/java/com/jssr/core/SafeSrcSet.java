@@ -33,17 +33,9 @@ public record SafeSrcSet(String value) implements JssrComponent {
                 continue;
             }
 
-            int spaceIdx = candidate.indexOf(' ');
-            String urlPart;
-            String descriptorPart;
-
-            if (spaceIdx != -1) {
-                urlPart = candidate.substring(0, spaceIdx).trim();
-                descriptorPart = candidate.substring(spaceIdx).trim();
-            } else {
-                urlPart = candidate;
-                descriptorPart = "";
-            }
+            String[] parts = candidate.split("\\s+", 2);
+            String urlPart = parts[0];
+            String descriptorPart = parts.length > 1 ? parts[1].trim() : "";
 
             String sanitizedUrl = SafeUrl.sanitize(urlPart);
             if (!descriptorPart.isEmpty()) {

@@ -35,7 +35,7 @@ JSSR is designed for internet-facing, security-critical Java applications. It en
 ### 3. Comprehensive URL & Multi-Candidate Attribute Protection (`SafeUrl`, `SafeSrcSet`, `SafeUrlList`)
 - **Single URL Attributes (`href`, `src`, `action`, `formaction`, `poster`, `data`, `codebase`, etc.)**: Strictly require `SafeUrl` typed fields; raw `String` properties throw an `IllegalArgumentException`. `SafeUrl` validates schemes against an allowlist (`http:`, `https:`, `mailto:`, `tel:`, relative paths, `#`, `?`). Dangerous schemes (e.g. `javascript:`, `vbscript:`, `data:`) are sanitized to `about:blank`.
 - **Multi-Candidate Image Attributes (`srcset`, `imagesrcset`)**: Strictly require `SafeSrcSet` typed fields. `SafeSrcSet` parses comma-separated candidates and individually sanitizes every URL candidate against dangerous protocols.
-- **Space-Separated URL Attributes (`ping`)**: Strictly require `SafeUrlList` (or `SafeUrl`) typed fields. `SafeUrlList` parses space-separated URL lists and individually sanitizes every URL candidate against dangerous protocols.
+- **Space-Separated URL Attributes (`ping`)**: Strictly require `SafeUrlList` typed fields (plain `String` and `SafeUrl` are rejected). `SafeUrlList` parses space-separated URL lists and individually sanitizes every URL candidate against non-HTTP/HTTPS schemes (`mailto:`, `tel:`, `javascript:`, `data:`, etc. are converted to `about:blank`).
 
 ### 4. Free-Standing Attribute Protection (`BooleanAttribute` & `HtmlAttribute`)
 - Plain `String` interpolation between HTML tag attributes is forbidden to prevent attribute injection.

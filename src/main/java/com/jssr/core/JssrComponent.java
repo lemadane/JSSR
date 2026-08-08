@@ -283,9 +283,9 @@ public interface JssrComponent {
                                             + (valType != null ? valType.getSimpleName() : "String") + ".");
                                 }
                             } else if ("ping".equals(lowerAttr)) {
-                                if (!(val instanceof SafeUrlList) && !(val instanceof SafeUrl) && valType != SafeUrlList.class && valType != SafeUrl.class) {
+                                if (!(val instanceof SafeUrlList) && valType != SafeUrlList.class) {
                                     throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                            + "} inside space-separated URL attribute 'ping' requires a SafeUrlList or SafeUrl field type instead of " 
+                                            + "} inside space-separated URL attribute 'ping' requires a SafeUrlList field type instead of " 
                                             + (valType != null ? valType.getSimpleName() : "String") + ".");
                                 }
                             } else if (URL_ATTRIBUTES.contains(lowerAttr)) {

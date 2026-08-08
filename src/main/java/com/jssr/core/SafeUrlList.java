@@ -31,7 +31,12 @@ public record SafeUrlList(String value) implements JssrComponent {
             if (rawUrl.isBlank()) {
                 continue;
             }
-            sanitizedList.add(SafeUrl.sanitize(rawUrl.trim()));
+            String sanitized = SafeUrl.sanitize(rawUrl.trim());
+            String lower = sanitized.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith("mailto:") || lower.startsWith("tel:")) {
+                sanitized = "about:blank";
+            }
+            sanitizedList.add(sanitized);
         }
 
         return String.join(" ", sanitizedList);
