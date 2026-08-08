@@ -31,8 +31,12 @@ public interface JssrComponent {
 
     /**
      * List of HTML attribute names that strictly require a SafeUrl value type.
+     * Includes all URL-bearing HTML attributes (href, src, action, formaction, poster, data, srcset, imagesrcset, etc.).
      */
-    Set<String> URL_ATTRIBUTES = Set.of("href", "src", "action", "formaction", "poster", "xlink:href");
+    Set<String> URL_ATTRIBUTES = Set.of(
+        "href", "src", "action", "formaction", "poster", "xlink:href",
+        "data", "srcset", "imagesrcset", "codebase", "icon", "manifest", "profile", "cite", "longdesc", "usemap"
+    );
 
     /**
      * Internal reflection metadata cache to optimize render performance across renders.
@@ -1543,18 +1547,18 @@ public interface JssrComponent {
             ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, tryResult.tryBody());
             String interpolated = interpolateVariables(component, localScope, flowRes.content());
             sb.append(interpolated);
-        } catch (Throwable t) {
+        } catch (Exception e) {
             if (tryResult.hasCatch()) {
                 Map<String, Object> catchScope = new HashMap<>(localScope);
                 String varName = (tryResult.catchVar() == null || tryResult.catchVar().isBlank()) ? "err" : tryResult.catchVar();
-                String rawMsg = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+                String rawMsg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                 String safeMsg = rawMsg.replace("${", "&#36;{");
 
-                catchScope.put(varName, t);
+                catchScope.put(varName, e);
                 catchScope.put(varName + ".message", safeMsg);
-                catchScope.put("e", t);
+                catchScope.put("e", e);
                 catchScope.put("e.message", safeMsg);
-                catchScope.put("error", t);
+                catchScope.put("error", e);
                 catchScope.put("error.message", safeMsg);
 
                 ControlFlowResult flowRes = parseControlFlowBlocks(component, catchScope, tryResult.catchBody());

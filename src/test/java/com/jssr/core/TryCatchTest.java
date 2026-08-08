@@ -262,4 +262,46 @@ public class TryCatchTest {
         assertTrue(html.contains("Type: IllegalStateException"));
         assertTrue(html.contains("Message: Cluster Quorum Lost"));
     }
+
+    public record JvmErrorInTryComp(String errorType) implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div class="try-jvm-error">
+                @try:
+                    @if (errorType == 'OOM'):
+                        @throw(new java.lang.OutOfMemoryError("Java heap space simulation")):
+                    @elseif (errorType == 'SOE'):
+                        @throw(new java.lang.StackOverflowError("Stack depth limit simulation")):
+                    @elseif (errorType == 'LINK'):
+                        @throw(new java.lang.LinkageError("Class linkage failure simulation")):
+                    @else:
+                        @throw(new java.lang.IllegalArgumentException("Ordinary caught exception")):
+                    @end
+                @catch(e):
+                    <div class="caught-msg">Caught: ${e.message}</div>
+                @end
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@try: catches Exception but allows serious JVM Error instances (OutOfMemoryError, StackOverflowError, LinkageError) to escape unintercepted")
+    void testJvmErrorsEscapeTryCatch() {
+        // 1. Fatal JVM Errors MUST escape @try blocks
+        JvmErrorInTryComp oomComp = new JvmErrorInTryComp("OOM");
+        assertThrows(OutOfMemoryError.class, oomComp::render);
+
+        JvmErrorInTryComp soeComp = new JvmErrorInTryComp("SOE");
+        assertThrows(StackOverflowError.class, soeComp::render);
+
+        JvmErrorInTryComp linkComp = new JvmErrorInTryComp("LINK");
+        assertThrows(LinkageError.class, linkComp::render);
+
+        // 2. Standard Exception instances MUST be caught by @catch(e):
+        JvmErrorInTryComp normalComp = new JvmErrorInTryComp("NORMAL");
+        String html = normalComp.render();
+        assertTrue(html.contains("Caught: Ordinary caught exception"));
+    }
 }

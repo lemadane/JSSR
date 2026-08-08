@@ -871,6 +871,35 @@ class ComponentTest {
         Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
         assertTrue(ex.getMessage().contains("RawHtml cannot be interpolated inside an HTML attribute"));
     }
+
+    public record ObjectDataComp(String resource) implements JssrComponent {
+        @Override public String template() { return "<object data=\"${resource}\"></object>"; }
+    }
+
+    public record SafeObjectDataComp(SafeUrl resource) implements JssrComponent {
+        @Override public String template() { return "<object data=\"${resource}\"></object>"; }
+    }
+
+    @Test
+    @DisplayName("URL-valued attributes like <object data=\"${resource}\"> strictly require SafeUrl and block raw String interpolation")
+    void testObjectDataUrlAttributeProtection() {
+        // String resource should be rejected
+        ObjectDataComp unsafeComp = new ObjectDataComp("javascript:alert(1)");
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, unsafeComp::render);
+        assertTrue(ex.getMessage().contains("inside URL attribute 'data' requires a SafeUrl field type"));
+
+        // SafeUrl resource should render safely
+        SafeObjectDataComp safeComp = new SafeObjectDataComp(SafeUrl.of("/media/widget.swf"));
+        assertEquals("<object data=\"/media/widget.swf\"></object>", safeComp.render());
+    }
+
+    @Test
+    @DisplayName("HtmlAttribute forbids URL-valued attribute names like 'data', 'srcset', and 'codebase'")
+    void testHtmlAttributeExpandedUrlBlocklist() {
+        assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("data", "javascript:alert(1)"));
+        assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("srcset", "javascript:alert(1)"));
+        assertThrows(IllegalArgumentException.class, () -> HtmlAttribute.of("codebase", "javascript:alert(1)"));
+    }
 }
 
 

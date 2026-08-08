@@ -32,8 +32,8 @@ JSSR is designed for internet-facing, security-critical Java applications. It en
 - `RawHtml` explicitly marks trusted pre-formatted HTML that should not be re-escaped.
 - Nested `JssrComponent` records render their structured templates directly without double-escaping.
 
-### 3. URL Attribute Protection (`SafeUrl`)
-- Dynamic interpolation in URL attributes (`href`, `src`, `action`, `formaction`, `poster`, `xlink:href`) strictly requires `SafeUrl` typed fields.
+### 3. Comprehensive URL Attribute Protection (`SafeUrl`)
+- Dynamic interpolation in all URL-bearing HTML attributes (`href`, `src`, `action`, `formaction`, `poster`, `data`, `srcset`, `imagesrcset`, `codebase`, `icon`, `manifest`, `profile`, `cite`, `longdesc`, `usemap`, `xlink:href`) strictly requires `SafeUrl` typed fields; raw `String` properties throw an `IllegalArgumentException`.
 - `SafeUrl` validates schemes against an allowlist (`http:`, `https:`, `mailto:`, `tel:`, relative paths, `#`, `?`). Dangerous schemes (e.g. `javascript:`, `vbscript:`, `data:`) are sanitized to `about:blank`.
 
 ### 4. Free-Standing Attribute Protection (`BooleanAttribute` & `HtmlAttribute`)
