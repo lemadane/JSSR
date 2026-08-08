@@ -5,6 +5,7 @@ import com.jssr.core.JssrComponent;
 import com.jssr.core.RawHtml;
 import com.jssr.core.SafeUrl;
 import com.jssr.e2e.app.TestApplication;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

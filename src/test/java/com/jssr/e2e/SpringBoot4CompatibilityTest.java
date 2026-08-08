@@ -3,6 +3,7 @@ package com.jssr.e2e;
 import com.jssr.core.JssrComponent;
 import com.jssr.core.SafeUrl;
 import com.jssr.e2e.app.TestApplication;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Spring Boot 3.x / 4.x compatibility verification test suite.
  * Verifies that JSSR component rendering, Spring MVC controller bindings, and ViewResolver
- * integration function seamlessly across Spring Boot runtime environments.
+ * integration function seamlessly across Spring Boot 3.x and 4.x runtime environments.
  */
 @SpringBootTest(classes = TestApplication.class)
 @AutoConfigureMockMvc
