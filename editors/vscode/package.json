@@ -1,0 +1,46 @@
+{
+  "name": "jssr-vscode",
+  "displayName": "JSSR (Java Server-Side Rendering)",
+  "description": "Syntax highlighting, directives, and code snippets for JSSR Java component templates.",
+  "version": "1.0.0",
+  "publisher": "jssr-dev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lemadane/JSSR"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "jssr",
+    "java",
+    "ssr",
+    "template",
+    "html",
+    "jsx",
+    "htmx"
+  ],
+  "icon": "icon.png",
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "inline.jssr",
+        "path": "./syntaxes/jssr-injection.json",
+        "injectTo": [
+          "source.java"
+        ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "java",
+        "path": "./snippets/jssr-snippets.json"
+      }
+    ]
+  }
+}

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.2] - 2026-08-08
+
+### Spring Boot 4 Matrix Verification & Tag-Versioned Release Automation
+
+#### Added
+- **Spring Boot 4.0.0 & 3.4.2 Dual-Version CI Matrix (`.github/workflows/ci.yml`)**: Parameterized Spring Boot version runs (`-PspringBootVersion=...`) across Java 17, 21, and 25 (6 matrix jobs total) to guarantee 100% source and runtime compatibility across Spring Boot 3.x and Spring Boot 4.0.0+.
+- **Cross-Version Test Configuration (`MockMvcTestConfig.java`)**: Added a `@TestConfiguration` supplier (`MockMvcTestConfig`) providing Spring Web MVC `MockMvc` bean setup for test classes (`UserCrudE2ETest`, `SpringBoot4CompatibilityTest`) without version-specific `@AutoConfigureMockMvc` package dependencies.
+- **Automated Tag Version Extraction (`.github/workflows/release.yml`)**: Added automated Git tag version parsing (`TAG_VERSION=${GITHUB_REF_NAME#v}`) to pass `-Pversion=${TAG_VERSION}` to Gradle build, test, and publishing tasks, ensuring compiled JAR artifacts match release tags.
+
+#### Fixed
+- **Gradle Spring Boot Dependency Management Isolation**: Removed root Spring Boot plugin application in `build.gradle` to prevent hardcoded 3.4.2 dependency management overrides during `-PspringBootVersion=4.0.0` builds.
+
+---
+
 ## [1.1.0] - 2026-08-08
 
 ### Native Template Control Flow & Pattern Matching Release

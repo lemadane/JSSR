@@ -72,7 +72,6 @@ JSSR provides a rich, native control flow engine designed for Java 17+ record te
 | `@if(cond):` ... `@elseif(cond):` ... `@else:` ... `@end` | Conditional branching with property paths, negations (`!`), and comparisons | `@if (user.role == 'ADMIN'):` |
 | `@if(obj instanceof Type var):` | Java 17+ pattern matching with scoped variable binding | `@if (user instanceof AdminUser admin):` |
 | `@for(item : collection):` ... `@else:` ... `@end` | Collection & array iteration with empty-list fallback rendering | `@for (item : user.projects):` |
-| `@while(cond):` ... `@end` | Bounded condition loops with infinite-loop guard (`MAX_WHILE_ITERATIONS = 1000`) | `@while (queue.hasNext()):` |
 | `@switch(expr):` ... `@case(val):` ... `@default:` ... `@end` | Value pattern matching & polymorphic runtime type inspection | `@switch (typeof(account)):` |
 | `@try:` ... `@catch(err):` ... `@finally:` ... `@end` | Template error boundaries for component fault isolation and safe fallback UI | `@try: ... @catch(e):` |
 | `@throw("msg")` / `@throw(new Ex("msg"))` / `@throw(ex)` | Intentionally raise custom or instantiated exceptions inside templates | `@throw(new IllegalStateException("Quorum Lost")):` |
@@ -375,7 +374,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.lemadane:JSSR:v1.0.0'
+    implementation 'com.github.lemadane:JSSR:v1.1.2'
 }
 ```
 
@@ -395,18 +394,18 @@ Add the JitPack repository and dependency to `pom.xml`:
     <dependency>
         <groupId>com.github.lemadane</groupId>
         <artifactId>JSSR</artifactId>
-        <version>v1.0.0</version>
+        <version>v1.1.2</version>
     </dependency>
 </dependencies>
 ```
 
 ### Publishing Releases on GitHub
 
-To publish an official version tag (e.g. `v1.0.0`) on GitHub:
+To publish an official version tag (e.g. `v1.1.2`) on GitHub:
 
 ```bash
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.2 -m "Release v1.1.2"
+git push origin v1.1.2
 ```
 
 ---
@@ -653,6 +652,27 @@ public record PreferencesForm(
 
 ---
 
+## 🛠️ VS Code Extension & IDE Tooling
+
+JSSR includes a native VS Code extension located in [`editors/vscode/`](file:///home/lem/Projects/java/JSSR/editors/vscode) providing automatic HTML/JSX syntax highlighting, JSSR control flow directive colorization, and code snippets (`jssr-comp`, `j-if`, `j-for`, `j-switch`, `j-try`) inside Java 17 multiline text blocks (`"""..."""`).
+
+### Quick Local Installation
+Copy the extension folder directly to your VS Code extensions directory:
+
+```bash
+# Linux / macOS
+mkdir -p ~/.vscode/extensions/jssr-vscode-1.0.0
+cp -r editors/vscode/* ~/.vscode/extensions/jssr-vscode-1.0.0/
+
+# Windows (PowerShell)
+New-Item -ItemType Directory -Path "$env:USERPROFILE\.vscode\extensions\jssr-vscode-1.0.0" -Force
+Copy-Item -Path "editors\vscode\*" -Destination "$env:USERPROFILE\.vscode\extensions\jssr-vscode-1.0.0" -Recurse
+```
+
+Reload VS Code to enable instant HTML/JSX syntax highlighting and snippets for JSSR!
+
+---
+
 ## Library Architecture
 
 `src/main/java` contains the pure, minimal JSSR framework:
@@ -661,6 +681,12 @@ public record PreferencesForm(
 JSSR/
 ├── .github/workflows/ci.yml              # GitHub Actions CI workflow
 ├── build.gradle                          # Groovy-Gradle configuration
+├── editors/
+│   └── vscode/                           # VS CODE EXTENSION (Syntax Highlighting & Snippets)
+│       ├── package.json
+│       ├── README.md
+│       ├── snippets/jssr-snippets.json
+│       └── syntaxes/jssr-injection.json
 ├── jitpack.yml                           # JitPack build configuration
 ├── LICENSE                               # MIT License
 ├── README.md                             # Documentation
@@ -682,10 +708,14 @@ JSSR/
 
 ## Running Tests
 
-Run unit, E2E integration, and multi-threaded concurrency benchmark tests:
+Run unit, parser fuzz testing, E2E integration, and multi-threaded concurrency benchmark tests across default or parameterized Spring Boot target versions:
 
 ```bash
+# Default test suite execution (Spring Boot 3.4.2)
 ./gradlew test
+
+# Verify test suite under Spring Boot 4.0.0+
+./gradlew test -PspringBootVersion=4.0.0
 ```
 
 ---

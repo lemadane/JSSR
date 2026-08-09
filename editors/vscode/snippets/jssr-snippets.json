@@ -1,0 +1,76 @@
+{
+  "JSSR Component Record": {
+    "prefix": "jssr-comp",
+    "body": [
+      "public record ${1:MyComponent}(${2:String name}) implements JssrComponent {",
+      "    @Override",
+      "    public String template() {",
+      "        return \"\"\"",
+      "            <div class=\"${3:container}\">",
+      "                <h1>\\${${4:name}}</h1>",
+      "                $0",
+      "            </div>",
+      "            \"\"\";",
+      "    }",
+      "}"
+    ],
+    "description": "Create a new JSSR Component Record"
+  },
+  "JSSR @if Directive": {
+    "prefix": "j-if",
+    "body": [
+      "@if (${1:condition})",
+      "    $0",
+      "@end"
+    ],
+    "description": "JSSR @if directive block"
+  },
+  "JSSR @if @else Directive": {
+    "prefix": "j-ifelse",
+    "body": [
+      "@if (${1:condition})",
+      "    $2",
+      "@else",
+      "    $0",
+      "@end"
+    ],
+    "description": "JSSR @if ... @else directive block"
+  },
+  "JSSR @for Directive": {
+    "prefix": "j-for",
+    "body": [
+      "@for (${1:item} : ${2:collection})",
+      "    $0",
+      "@else",
+      "    <p class=\"empty\">No items found.</p>",
+      "@end"
+    ],
+    "description": "JSSR @for loop directive block with @else fallback"
+  },
+  "JSSR @switch Directive": {
+    "prefix": "j-switch",
+    "body": [
+      "@switch (${1:expression})",
+      "    @case ('${2:VALUE}')",
+      "        $3",
+      "        @break",
+      "    @default",
+      "        $0",
+      "        @break",
+      "@end"
+    ],
+    "description": "JSSR @switch / @case directive block"
+  },
+  "JSSR @try Directive": {
+    "prefix": "j-try",
+    "body": [
+      "@try",
+      "    $1",
+      "@catch (${2:err})",
+      "    <div class=\"error\">\\${${2:err}.message}</div>",
+      "    $0",
+      "@end"
+    ],
+    "description": "JSSR @try / @catch error boundary directive block"
+  }
+}

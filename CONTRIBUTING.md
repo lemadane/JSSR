@@ -49,11 +49,12 @@ All Pull Requests (PRs) must meet the following criteria before approval:
 ### 2. Testing Requirements
 - Every new feature or bug fix MUST include corresponding unit tests in `src/test/java/com/jssr/core/`.
 - Security fixes MUST include regression test cases proving payload neutralization.
-- Run the full test suite locally before submitting PR:
+- Run the full test suite locally against both Spring Boot 3.4.2 and Spring Boot 4.0.0 before submitting a PR:
   ```bash
   ./gradlew test --rerun-tasks
+  ./gradlew test -PspringBootVersion=4.0.0 --rerun-tasks
   ```
-- All automated tests on Java 17, 21, and 25 must pass in CI.
+- All automated test matrix jobs across Java 17, 21, and 25 $\times$ Spring Boot 3.4.2 & 4.0.0 must pass in CI.
 
 ### 3. Code Style & Conventions
 - Follow standard Java code formatting conventions.

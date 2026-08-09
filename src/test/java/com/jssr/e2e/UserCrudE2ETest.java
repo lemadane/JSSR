@@ -590,7 +590,7 @@ class UserCrudE2ETest {
         }
 
         @Test
-        @DisplayName("12. Real-world E2E test for @while loop with nested @for, @if/@elseif/@else, @continue, and @break")
+        @DisplayName("12. Real-world E2E test for nested @for loops with @if/@elseif/@else, @continue, and @break")
         void testE2eWhileLoopWithNestedForIfContinueBreak() {
             // Batch 1 metrics: 2 normal metrics, 1 ignored metric
             com.jssr.e2e.app.model.MetricItem m1 = new com.jssr.e2e.app.model.MetricItem("CPU Load", "OK", "12%", false, false);
@@ -615,14 +615,12 @@ class UserCrudE2ETest {
             String html = reportCard.render();
 
             assertTrue(html.contains("Production Cluster Health Diagnostic Report"));
-            assertTrue(html.contains("Batch #1"));
             assertTrue(html.contains("CPU Load"));
             assertTrue(html.contains("OK (12%)"));
             assertFalse(html.contains("Debug Telemetry")); // Skipped via @continue
             assertTrue(html.contains("Memory Pressure"));
             assertTrue(html.contains("WARNING (84%)"));
 
-            assertTrue(html.contains("Batch #2"));
             assertTrue(html.contains("Disk I/O"));
             assertTrue(html.contains("FATAL HARDWARE FAILURE DETECTED ON RAID Array Primary Controller"));
             assertFalse(html.contains("Network Throughput")); // Aborted via @break

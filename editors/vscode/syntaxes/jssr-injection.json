@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "jssr-injection",
+  "scopeName": "inline.jssr",
+  "injectionSelector": "L:string.quoted.triple.block.java",
+  "patterns": [
+    {
+      "name": "keyword.control.jssr",
+      "match": "@(if|elseif|else|for|switch|case|default|try|catch|finally|throw|continue|break|end)\\b"
+    },
+    {
+      "name": "variable.other.interpolated.jssr",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.variable.jssr" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.variable.jssr" }
+      },
+      "patterns": [
+        {
+          "name": "variable.other.property.jssr",
+          "match": "[a-zA-Z0-9_\\.]+"
+        }
+      ]
+    },
+    {
+      "include": "text.html.basic"
+    }
+  ]
+}

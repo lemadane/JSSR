@@ -923,13 +923,11 @@ public interface JssrComponent {
         return new PropertyResult(curr, currType, true);
     }
 
-    int MAX_WHILE_ITERATIONS = 1000;
-
     enum LoopSignal { NONE, CONTINUE, BREAK }
     record ControlFlowResult(String content, LoopSignal signal) {}
 
     /**
-     * Parse control flow directives (@if, @for, @while, @continue, @break) in component templates.
+     * Parse control flow directives (@if, @for, @continue, @break) in component templates.
      */
     static String processControlFlow(JssrComponent component, String template) {
         return processControlFlow(component, Collections.emptyMap(), template);
@@ -937,7 +935,7 @@ public interface JssrComponent {
 
     static String processControlFlow(JssrComponent component, Map<String, Object> localScope, String template) {
         if (component == null || template == null || template.isBlank() 
-                || (!template.contains("@if") && !template.contains("@for") && !template.contains("@while") 
+                || (!template.contains("@if") && !template.contains("@for")
                     && !template.contains("@switch") && !template.contains("@try") && !template.contains("@throw")
                     && !template.contains("@continue") && !template.contains("@break"))) {
             return template == null ? "" : template;
@@ -947,7 +945,7 @@ public interface JssrComponent {
 
     private static ControlFlowResult parseControlFlowBlocks(JssrComponent component, Map<String, Object> localScope, String text) {
         if (text == null || text.isEmpty() 
-                || (!text.contains("@if") && !text.contains("@for") && !text.contains("@while") 
+                || (!text.contains("@if") && !text.contains("@for")
                     && !text.contains("@switch") && !text.contains("@try") && !text.contains("@throw")
                     && !text.contains("@continue") && !text.contains("@break"))) {
             return new ControlFlowResult(text == null ? "" : text, LoopSignal.NONE);
@@ -1000,11 +998,6 @@ public interface JssrComponent {
                 ForBlockResult blockResult = parseForBlockAt(component, text, directiveIdx);
                 String renderedFor = evaluateForBlockResult(component, localScope, blockResult);
                 result.append(renderedFor);
-                curr = blockResult.endIndex;
-            } else if (text.startsWith("@while", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
-                WhileBlockResult blockResult = parseWhileBlockAt(component, text, directiveIdx);
-                String renderedWhile = evaluateWhileBlockResult(component, localScope, blockResult);
-                result.append(renderedWhile);
                 curr = blockResult.endIndex;
             } else if (text.startsWith("@switch", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 7)) {
                 SwitchBlockResult blockResult = parseSwitchBlockAt(component, text, directiveIdx);
@@ -1073,9 +1066,6 @@ public interface JssrComponent {
             } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
                 nestedDepth++;
                 curr += 7;
-            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                nestedDepth++;
-                curr += 6;
             } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
                 nestedDepth++;
                 curr += 4;
@@ -1180,9 +1170,6 @@ public interface JssrComponent {
             } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
                 nestedDepth++;
                 curr += 7;
-            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                nestedDepth++;
-                curr += 6;
             } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
                 nestedDepth++;
                 curr += 4;
@@ -1215,78 +1202,7 @@ public interface JssrComponent {
                 + component.getClass().getSimpleName() + ". Expected matching '@end'.");
     }
 
-    record WhileBlockResult(String conditionExpr, String loopBody, int endIndex) {}
 
-    private static WhileBlockResult parseWhileBlockAt(JssrComponent component, String text, int startIdx) {
-        int len = text.length();
-        int condOpen = text.indexOf('(', startIdx + 6);
-        int condClose = findMatchingParen(text, condOpen);
-        if (condOpen == -1 || condClose == -1) {
-            throw new IllegalArgumentException("Malformed '@while' condition in directive starting at index " + startIdx 
-                    + " in component " + component.getClass().getSimpleName());
-        }
-
-        String conditionExpr = text.substring(condOpen + 1, condClose).trim();
-
-        int curr = condClose + 1;
-        int loopBodyStart = curr;
-
-        int nestedDepth = 0;
-
-        while (curr < len) {
-            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
-                int commentEnd = text.indexOf("-->", curr + 4);
-                if (commentEnd != -1) {
-                    curr = commentEnd + 3;
-                    continue;
-                }
-            }
-            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
-                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
-                if (scriptEnd != -1) {
-                    curr = scriptEnd + 9;
-                    continue;
-                }
-            }
-            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
-                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
-                if (styleEnd != -1) {
-                    curr = styleEnd + 8;
-                    continue;
-                }
-            }
-
-            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                nestedDepth++;
-                curr += 7;
-            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                nestedDepth++;
-                curr += 6;
-            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
-                nestedDepth++;
-                curr += 3;
-            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                if (nestedDepth > 0) {
-                    nestedDepth--;
-                    curr += 4;
-                } else {
-                    String loopBody = text.substring(loopBodyStart, curr);
-                    return new WhileBlockResult(conditionExpr, loopBody, curr + 4);
-                }
-            } else {
-                curr++;
-            }
-        }
-
-        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@while' in component " 
-                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
-    }
 
     private static int findNextControlFlowDirective(String text, int fromIdx) {
         int len = text.length();
@@ -1316,7 +1232,6 @@ public interface JssrComponent {
 
             if ((text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3))
                     || (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4))
-                    || (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6))
                     || (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7))
                     || (text.startsWith("@case", curr) && isValidDirectiveBoundary(text, curr, 5))
                     || (text.startsWith("@default", curr) && isValidDirectiveBoundary(text, curr, 8))
@@ -1495,9 +1410,6 @@ public interface JssrComponent {
             } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
                 nestedDepth++;
                 curr += 7;
-            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                nestedDepth++;
-                curr += 6;
             } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
                 nestedDepth++;
                 curr += 4;
@@ -1641,9 +1553,6 @@ public interface JssrComponent {
             if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
                 nestedDepth++;
                 curr += 7;
-            } else if (text.startsWith("@while", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                nestedDepth++;
-                curr += 6;
             } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
                 nestedDepth++;
                 curr += 4;
@@ -1800,27 +1709,7 @@ public interface JssrComponent {
         }
     }
 
-    private static String evaluateWhileBlockResult(JssrComponent component, Map<String, Object> localScope, WhileBlockResult whileResult) {
-        StringBuilder sb = new StringBuilder();
-        int iteration = 0;
 
-        while (evaluateCondition(component, localScope, whileResult.conditionExpr)) {
-            iteration++;
-            if (iteration > MAX_WHILE_ITERATIONS) {
-                throw new IllegalStateException("JSSR @while loop iteration limit exceeded (max " + MAX_WHILE_ITERATIONS 
-                        + " iterations) for condition '" + whileResult.conditionExpr + "' in component " + component.getClass().getSimpleName());
-            }
-
-            ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, whileResult.loopBody);
-            String interpolated = interpolateVariables(component, localScope, flowRes.content());
-            sb.append(interpolated);
-
-            if (flowRes.signal() == LoopSignal.BREAK) {
-                break;
-            }
-        }
-        return sb.toString();
-    }
 
     @SuppressWarnings("unchecked")
     private static List<?> toList(Object obj) {

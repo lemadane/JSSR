@@ -14,14 +14,14 @@ public record AnalyticsReportCard(
                 <h1 class="text-2xl font-bold mb-6 text-slate-100">${cursor.reportTitle}</h1>
 
                 <div class="batches-container space-y-6">
-                <!-- Outer @while loop iterating batches -->
-                @while (cursor.hasUnprocessedBatches)
+                <!-- Outer @for loop iterating batches -->
+                @for (batch : cursor.batches)
                     <div class="batch-card p-5 bg-slate-800/60 rounded-xl border border-slate-700">
-                        <h3 class="text-base font-bold text-indigo-400 mb-3">Batch #${cursor.currentBatchNumber}</h3>
+                        <h3 class="text-base font-bold text-indigo-400 mb-3">Batch</h3>
 
                         <div class="metrics-list space-y-2">
-                        <!-- Nested @for loop inside @while loop -->
-                        @for (metric : cursor.currentMetrics)
+                        <!-- Nested @for loop inside @for loop -->
+                        @for (metric : batch)
                             <!-- Loop control: @continue skipping ignored metrics -->
                             @if (metric.ignore)
                                 @continue
@@ -38,7 +38,7 @@ public record AnalyticsReportCard(
                             <div class="metric-row p-3 bg-slate-900/60 rounded flex justify-between items-center text-xs font-mono border border-slate-800">
                                 <span class="text-slate-300 font-semibold">${metric.name}</span>
 
-                                <!-- Nested @if / @elseif / @else inside @for inside @while -->
+                                <!-- Nested @if / @elseif / @else inside @for -->
                                 @if (metric.status == 'CRITICAL')
                                     <span class="badge-critical bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1 rounded-full font-bold">
                                         CRITICAL (${metric.value})
