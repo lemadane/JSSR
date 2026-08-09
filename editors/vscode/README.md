@@ -7,6 +7,7 @@ Native VS Code extension for **JSSR (Java Server-Side Rendering)**. Provides aut
 ## Features
 
 - **Automatic Text Block Highlighting**: Automatically highlights HTML tags, CSS classes, and attributes inside Java 17 `"""..."""` text blocks.
+- **Auto-Formatting / Prettifying**: Automatically indents and formats HTML tags and JSSR control directives (`@if`, `@for`, `@switch`, `@try`) on `Format Document` (`Shift+Alt+F`) or `editor.formatOnSave`.
 - **Directive Colorization**: Highlights JSSR directives (`@if`, `@elseif`, `@else`, `@for`, `@switch`, `@case`, `@default`, `@try`, `@catch`, `@finally`, `@throw`, `@continue`, `@break`, `@end`).
 - **Variable Placeholder Highlighting**: Colorizes `${variableName}` expressions inside templates.
 - **Handy Code Snippets**:

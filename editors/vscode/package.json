@@ -1,10 +1,11 @@
 {
   "name": "jssr-vscode",
   "displayName": "JSSR (Java Server-Side Rendering)",
-  "description": "Syntax highlighting, directives, and code snippets for JSSR Java component templates.",
-  "version": "1.0.0",
+  "description": "Syntax highlighting, auto-formatting, directives, and code snippets for JSSR Java component templates.",
+  "version": "1.1.0",
   "publisher": "jssr-dev",
   "license": "MIT",
+  "main": "./extension.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/lemadane/JSSR"
@@ -12,9 +13,13 @@
   "engines": {
     "vscode": "^1.75.0"
   },
+  "activationEvents": [
+    "onLanguage:java"
+  ],
   "categories": [
     "Programming Languages",
-    "Snippets"
+    "Snippets",
+    "Formatters"
   ],
   "keywords": [
     "jssr",
@@ -23,9 +28,9 @@
     "template",
     "html",
     "jsx",
+    "formatter",
     "htmx"
   ],
-  "icon": "icon.png",
   "contributes": {
     "grammars": [
       {
@@ -41,6 +46,16 @@
         "language": "java",
         "path": "./snippets/jssr-snippets.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "JSSR",
+      "properties": {
+        "jssr.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "description": "Indentation size in spaces for JSSR template HTML tags and directives."
+        }
+      }
+    }
   }
 }

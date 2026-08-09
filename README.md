@@ -742,7 +742,7 @@ public record PreferencesForm(
 
 ## 🛠️ VS Code Extension & IDE Tooling
 
-JSSR includes a native VS Code extension located in [`editors/vscode/`](file:///home/lem/Projects/java/JSSR/editors/vscode) providing automatic HTML/JSX syntax highlighting, JSSR control flow directive colorization, and code snippets (`jssr-comp`, `j-if`, `j-for`, `j-switch`, `j-try`) inside Java 17 multiline text blocks (`"""..."""`).
+JSSR includes a native VS Code extension located in [`editors/vscode/`](file:///home/lem/Projects/java/JSSR/editors/vscode) providing automatic HTML/JSX syntax highlighting, template auto-formatting (`Shift+Alt+F`), JSSR control flow directive colorization, and code snippets (`jssr-comp`, `j-if`, `j-for`, `j-switch`, `j-try`) inside Java 17 multiline text blocks (`"""..."""`).
 
 ### Quick Local Installation
 Copy the extension folder directly to your VS Code extensions directory:
