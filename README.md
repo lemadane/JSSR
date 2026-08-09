@@ -517,6 +517,94 @@ public class UserController {
 
 ---
 
+---
+
+## 🚀 Server-Driven Micro-Component Architecture
+
+JSSR enables a modern **Server-Driven Micro-Component Architecture** combining **Spring MVC Controllers**, **JSSR Layout Components**, **HTMX**, and **Alpine.js**.
+
+This architecture brings SPA-like responsiveness, microsecond partial DOM updates, and full browser history navigation to Java applications—**with zero Node.js, npm, or JavaScript build pipelines**.
+
+```text
+┌───────────────────────────────────────────────────────────┐
+│                     BACKEND (Server)                      │
+│  • Spring Boot     → Controllers & Route Handlers         │
+│  • JSSR            → Strongly-typed Java Record HTML      │
+│                      Component Rendering Engine           │
+└─────────────────────────────┬─────────────────────────────┘
+                              │
+                    HTTP / HTML Fragments
+                              │
+┌─────────────────────────────▼─────────────────────────────┐
+│                    FRONTEND (Browser)                     │
+│  • HTMX            → Server-driven AJAX & partial DOM     │
+│                      swaps (hx-get, hx-post, hx-push-url)│
+│  • Alpine.js       → Micro client-side reactivity       │
+│                      (dropdowns, modals, tabs, x-model)   │
+│  • Tailwind CSS    → Utility-first styling via CDN      │
+└───────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Pillars
+
+1. **Spring MVC Controllers (Route Handlers)**: Server endpoints inspect incoming headers (e.g. `HX-Request`). Full page visits return a `JssrComponent` wrapped in an `AppLayout`, while HTMX AJAX swaps return **only the micro-component fragment**.
+2. **JSSR Layout Components (React Router `<Outlet />` Equivalent)**: Wrap page views with shared headers, navigation bars, and page metadata via slot composition (`new AppLayout("Users", new UserTable(users))`).
+3. **HTMX (Server-Driven Partial DOM Swaps)**: Background AJAX requests fetch micro HTML fragments from JSSR and update the browser URL bar with `hx-push-url="true"`.
+4. **Alpine.js (Micro-Client Reactivity)**: Handles instant in-browser state (modals, dropdowns, client input formatting) directly inside JSSR template text blocks.
+
+### Architecture Code Pattern
+
+```java
+// 1. Reusable Page Layout Component
+public record AppLayout(String title, JssrComponent content) implements JssrComponent {
+    @Override
+    public String template() {
+        return """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <title>${title}</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            </head>
+            <body class="bg-slate-950 text-slate-100">
+                <main id="page-container" class="max-w-6xl mx-auto p-6">
+                    ${content}
+                </main>
+            </body>
+            </html>
+            """;
+    }
+}
+
+// 2. Dual Full-Page & Fragment Controller Handler
+@Controller
+@RequestMapping("/users")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    @GetMapping
+    public JssrComponent listUsers(
+            @RequestParam(required = false) String query,
+            @RequestHeader(value = "HX-Request", required = false) boolean isHtmx) {
+        
+        List<User> users = (query != null && !query.isBlank()) 
+                ? userService.search(query) 
+                : userService.findAll();
+
+        JssrComponent userTable = new UserTableComponent(users);
+
+        // HTMX request -> Return ONLY micro HTML fragment (< 1KB)
+        // Direct Browser Visit / Bookmark -> Wrap in full AppLayout HTML
+        return isHtmx ? userTable : new AppLayout("Users Directory", userTable);
+    }
+}
+```
+
+---
+
 ## Working with HTML Forms & Spring MVC
 
 JSSR makes handling HTML form submission, input pre-filling, validation error feedback, and HTMX swaps seamless and type-safe.
