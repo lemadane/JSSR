@@ -72,6 +72,10 @@ public interface JssrComponent {
      * @return Fully rendered HTML string with resolved variables and child tags
      */
     default String render() {
+        if (com.jssr.core.compiler.JssrPrecompiler.isGlobalPrecompilationEnabled()) {
+            return renderPrecompiled();
+        }
+
         int depth = RENDER_DEPTH.get();
         if (depth > MAX_RENDER_DEPTH) {
             throw new IllegalStateException("JSSR component recursion limit exceeded (max depth " 
@@ -89,6 +93,26 @@ public interface JssrComponent {
             String controlFlowProcessed = processControlFlow(this, localScope, rawHtml);
             String interpolatedHtml = interpolateVariables(this, localScope, controlFlowProcessed);
             return processCustomTags(interpolatedHtml);
+        } finally {
+            RENDER_DEPTH.set(depth);
+        }
+    }
+
+    /**
+     * Render the component using precompiled JVM bytecode execution.
+     *
+     * @return Fully rendered HTML string
+     */
+    default String renderPrecompiled() {
+        int depth = RENDER_DEPTH.get();
+        if (depth > MAX_RENDER_DEPTH) {
+            throw new IllegalStateException("JSSR component recursion limit exceeded (max depth " 
+                    + MAX_RENDER_DEPTH + ") for component: " + getClass().getSimpleName());
+        }
+
+        RENDER_DEPTH.set(depth + 1);
+        try {
+            return com.jssr.core.compiler.JssrPrecompiler.renderPrecompiled(this);
         } finally {
             RENDER_DEPTH.set(depth);
         }
