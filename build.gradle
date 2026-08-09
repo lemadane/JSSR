@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.github.lemadane'
-version = project.hasProperty('version') ? project.version : '1.1.2'
+version = (project.hasProperty('version') && !'unspecified'.equals(project.property('version'))) ? project.property('version') : '1.2.0'
 
 ext {
     bootVersion = project.hasProperty('springBootVersion') ? project.property('springBootVersion') : '3.4.2'
