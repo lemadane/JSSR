@@ -4,6 +4,7 @@ import java.util.*;
 
 /**
  * Parser for JSSR template strings into an Abstract Syntax Tree (AST) representation.
+ * Enforces HTML context tracking and loop boundary validations.
  */
 public final class TemplateParser {
 
@@ -19,10 +20,10 @@ public final class TemplateParser {
         if (template == null || template.isEmpty()) {
             return Collections.emptyList();
         }
-        return parseBlock(template, 0, template.length());
+        return parseBlock(template, 0, template.length(), 0);
     }
 
-    private static List<TemplateNode> parseBlock(String s, int start, int end) {
+    private static List<TemplateNode> parseBlock(String s, int start, int end, int loopDepth) {
         List<TemplateNode> nodes = new ArrayList<>();
         int i = start;
 
@@ -32,6 +33,10 @@ public final class TemplateParser {
         String pendingAttr = "";
         boolean seenEquals = false;
         StringBuilder attrBuf = new StringBuilder();
+
+        boolean inScript = false;
+        boolean inStyle = false;
+        boolean inComment = false;
 
         while (i < end) {
             int nextInterpolation = s.indexOf("${", i);
@@ -52,55 +57,74 @@ public final class TemplateParser {
                 break;
             }
 
-            // Update HTML attribute state tracking up to next placeholder/directive
+            // Update HTML attribute and script/style/comment context state up to next token
             for (int k = i; k < next; k++) {
-                char c = s.charAt(k);
-                if (c == '<') {
-                    inTag = true;
-                    currentAttr = "";
-                    pendingAttr = "";
-                    seenEquals = false;
-                    attrBuf.setLength(0);
-                } else if (inTag) {
-                    if (quoteChar != 0) {
-                        if (c == quoteChar) {
-                            quoteChar = 0;
-                            currentAttr = "";
-                            pendingAttr = "";
-                            seenEquals = false;
-                            attrBuf.setLength(0);
+                if (k + 4 <= end && s.startsWith("<!--", k)) {
+                    inComment = true;
+                } else if (inComment && k + 3 <= end && s.startsWith("-->", k)) {
+                    inComment = false;
+                }
+
+                if (!inComment) {
+                    char c = s.charAt(k);
+                    if (c == '<') {
+                        inTag = true;
+                        currentAttr = "";
+                        pendingAttr = "";
+                        seenEquals = false;
+                        attrBuf.setLength(0);
+
+                        String lowerRemainder = s.substring(k).toLowerCase(Locale.ROOT);
+                        if (lowerRemainder.startsWith("<script")) {
+                            inScript = true;
+                        } else if (lowerRemainder.startsWith("</script>")) {
+                            inScript = false;
+                        } else if (lowerRemainder.startsWith("<style")) {
+                            inStyle = true;
+                        } else if (lowerRemainder.startsWith("</style>")) {
+                            inStyle = false;
                         }
-                    } else {
-                        if (c == '"' || c == '\'') {
-                            quoteChar = c;
-                            if (seenEquals && !pendingAttr.isEmpty()) {
-                                currentAttr = pendingAttr;
-                            } else if (!attrBuf.toString().isBlank()) {
-                                currentAttr = attrBuf.toString().trim();
-                            }
-                            attrBuf.setLength(0);
-                        } else if (c == '=') {
-                            if (!seenEquals) {
-                                if (!attrBuf.toString().isBlank()) {
-                                    pendingAttr = attrBuf.toString().trim();
-                                    attrBuf.setLength(0);
-                                }
-                                seenEquals = true;
-                            }
-                        } else if (c == '>') {
-                            inTag = false;
-                            quoteChar = 0;
-                            currentAttr = "";
-                            pendingAttr = "";
-                            seenEquals = false;
-                            attrBuf.setLength(0);
-                        } else if (Character.isWhitespace(c)) {
-                            if (!seenEquals && !attrBuf.toString().isBlank()) {
-                                pendingAttr = attrBuf.toString().trim();
+                    } else if (inTag) {
+                        if (quoteChar != 0) {
+                            if (c == quoteChar) {
+                                quoteChar = 0;
+                                currentAttr = "";
+                                pendingAttr = "";
+                                seenEquals = false;
                                 attrBuf.setLength(0);
                             }
                         } else {
-                            attrBuf.append(c);
+                            if (c == '"' || c == '\'') {
+                                quoteChar = c;
+                                if (seenEquals && !pendingAttr.isEmpty()) {
+                                    currentAttr = pendingAttr;
+                                } else if (!attrBuf.toString().isBlank()) {
+                                    currentAttr = attrBuf.toString().trim();
+                                }
+                                attrBuf.setLength(0);
+                            } else if (c == '=') {
+                                if (!seenEquals) {
+                                    if (!attrBuf.toString().isBlank()) {
+                                        pendingAttr = attrBuf.toString().trim();
+                                        attrBuf.setLength(0);
+                                    }
+                                    seenEquals = true;
+                                }
+                            } else if (c == '>') {
+                                inTag = false;
+                                quoteChar = 0;
+                                currentAttr = "";
+                                pendingAttr = "";
+                                seenEquals = false;
+                                attrBuf.setLength(0);
+                            } else if (Character.isWhitespace(c)) {
+                                if (!seenEquals && !attrBuf.toString().isBlank()) {
+                                    pendingAttr = attrBuf.toString().trim();
+                                    attrBuf.setLength(0);
+                                }
+                            } else {
+                                attrBuf.append(c);
+                            }
                         }
                     }
                 }
@@ -117,23 +141,25 @@ public final class TemplateParser {
                 if (closing != -1 && closing < end) {
                     String expr = s.substring(i + 2, closing).trim();
                     String activeAttr = null;
-                    if (inTag && (quoteChar != 0 || seenEquals)) {
+                    if (inTag && (quoteChar != 0 || seenEquals || !currentAttr.isEmpty() || !pendingAttr.isEmpty())) {
                         activeAttr = currentAttr.isEmpty() ? pendingAttr : currentAttr;
                     }
-                    nodes.add(new TemplateNode.InterpolationNode(expr, activeAttr));
+                    nodes.add(new TemplateNode.InterpolationNode(
+                            expr, activeAttr, inTag, quoteChar, inScript, inStyle, inComment
+                    ));
                     i = closing + 1;
                 } else {
                     nodes.add(new TemplateNode.StaticTextNode("${"));
                     i += 2;
                 }
             } else if (s.startsWith("@if", i) && isWordBoundary(s, i + 3)) {
-                i = parseIfDirective(s, i, end, nodes);
+                i = parseIfDirective(s, i, end, nodes, loopDepth);
             } else if (s.startsWith("@for", i) && isWordBoundary(s, i + 4)) {
-                i = parseForDirective(s, i, end, nodes);
+                i = parseForDirective(s, i, end, nodes, loopDepth);
             } else if (s.startsWith("@switch", i) && isWordBoundary(s, i + 7)) {
-                i = parseSwitchDirective(s, i, end, nodes);
+                i = parseSwitchDirective(s, i, end, nodes, loopDepth);
             } else if (s.startsWith("@try", i) && isWordBoundary(s, i + 4)) {
-                i = parseTryDirective(s, i, end, nodes);
+                i = parseTryDirective(s, i, end, nodes, loopDepth);
             } else if (s.startsWith("@throw", i) && isWordBoundary(s, i + 6)) {
                 int openParen = s.indexOf('(', i + 6);
                 int closeParen = findMatchingParen(s, openParen);
@@ -147,9 +173,15 @@ public final class TemplateParser {
                     i += 6;
                 }
             } else if (s.startsWith("@continue", i) && isWordBoundary(s, i + 9)) {
+                if (loopDepth == 0) {
+                    throw new IllegalArgumentException("JSSR template parse error: @continue directive may only be used inside a @for loop.");
+                }
                 nodes.add(new TemplateNode.ContinueNode());
                 i += 9;
             } else if (s.startsWith("@break", i) && isWordBoundary(s, i + 6)) {
+                if (loopDepth == 0) {
+                    throw new IllegalArgumentException("JSSR template parse error: @break directive may only be used inside a @for loop.");
+                }
                 nodes.add(new TemplateNode.BreakNode());
                 i += 6;
             } else {
@@ -161,7 +193,7 @@ public final class TemplateParser {
         return nodes;
     }
 
-    private static int parseIfDirective(String s, int pos, int limit, List<TemplateNode> nodes) {
+    private static int parseIfDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
         int openParen = s.indexOf('(', pos);
         int closeParen = findMatchingParen(s, openParen);
         if (openParen == -1 || closeParen == -1 || closeParen >= limit) {
@@ -176,7 +208,7 @@ public final class TemplateParser {
         String fullBody = s.substring(bodyStart, bodyEnd);
         List<Branch> branches = parseIfBranches(fullBody);
 
-        TemplateNode.IfNode ifNode = buildIfTree(mainCond, branches);
+        TemplateNode.IfNode ifNode = buildIfTree(mainCond, branches, loopDepth);
         nodes.add(ifNode);
 
         return bodyEnd + 4; // skip "@end"
@@ -230,13 +262,13 @@ public final class TemplateParser {
         return branches;
     }
 
-    private static TemplateNode.IfNode buildIfTree(String mainCond, List<Branch> branches) {
+    private static TemplateNode.IfNode buildIfTree(String mainCond, List<Branch> branches, int loopDepth) {
         if (branches.isEmpty()) {
             return new TemplateNode.IfNode(mainCond, Collections.emptyList(), Collections.emptyList());
         }
 
         Branch mainBranch = branches.get(0);
-        List<TemplateNode> thenNodes = parse(mainBranch.body());
+        List<TemplateNode> thenNodes = parseBlock(mainBranch.body(), 0, mainBranch.body().length(), loopDepth);
 
         if (branches.size() == 1) {
             return new TemplateNode.IfNode(mainCond, thenNodes, Collections.emptyList());
@@ -247,15 +279,15 @@ public final class TemplateParser {
 
         List<TemplateNode> elseNodes;
         if (next.cond() != null) {
-            elseNodes = List.of(buildIfTree(next.cond(), remaining));
+            elseNodes = List.of(buildIfTree(next.cond(), remaining, loopDepth));
         } else {
-            elseNodes = parse(next.body());
+            elseNodes = parseBlock(next.body(), 0, next.body().length(), loopDepth);
         }
 
         return new TemplateNode.IfNode(mainCond, thenNodes, elseNodes);
     }
 
-    private static int parseForDirective(String s, int pos, int limit, List<TemplateNode> nodes) {
+    private static int parseForDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
         int openParen = s.indexOf('(', pos);
         int closeParen = findMatchingParen(s, openParen);
         if (openParen == -1 || closeParen == -1 || closeParen >= limit) {
@@ -286,10 +318,10 @@ public final class TemplateParser {
         List<TemplateNode> elseNodes;
 
         if (elseIdx != -1) {
-            bodyNodes = parse(fullBody.substring(0, elseIdx));
-            elseNodes = parse(fullBody.substring(elseIdx + 5));
+            bodyNodes = parseBlock(fullBody.substring(0, elseIdx), 0, elseIdx, loopDepth + 1);
+            elseNodes = parseBlock(fullBody.substring(elseIdx + 5), 0, fullBody.length() - (elseIdx + 5), loopDepth);
         } else {
-            bodyNodes = parse(fullBody);
+            bodyNodes = parseBlock(fullBody, 0, fullBody.length(), loopDepth + 1);
             elseNodes = Collections.emptyList();
         }
 
@@ -317,7 +349,7 @@ public final class TemplateParser {
         return -1;
     }
 
-    private static int parseTryDirective(String s, int pos, int limit, List<TemplateNode> nodes) {
+    private static int parseTryDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
         int bodyStart = pos + 4;
         if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
 
@@ -384,15 +416,15 @@ public final class TemplateParser {
         }
         if (finallyStr.startsWith(":")) finallyStr = finallyStr.substring(1);
 
-        List<TemplateNode> tryNodes = parse(tryStr);
-        List<TemplateNode> catchNodes = catchIdx != -1 ? parse(catchStr) : Collections.emptyList();
-        List<TemplateNode> finallyNodes = finallyIdx != -1 ? parse(finallyStr) : Collections.emptyList();
+        List<TemplateNode> tryNodes = parseBlock(tryStr, 0, tryStr.length(), loopDepth);
+        List<TemplateNode> catchNodes = catchIdx != -1 ? parseBlock(catchStr, 0, catchStr.length(), loopDepth) : Collections.emptyList();
+        List<TemplateNode> finallyNodes = finallyIdx != -1 ? parseBlock(finallyStr, 0, finallyStr.length(), loopDepth) : Collections.emptyList();
 
         nodes.add(new TemplateNode.TryNode(tryNodes, catchVar, catchNodes, finallyNodes));
         return bodyEnd + 4;
     }
 
-    private static int parseSwitchDirective(String s, int pos, int limit, List<TemplateNode> nodes) {
+    private static int parseSwitchDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
         int openParen = s.indexOf('(', pos);
         int closeParen = findMatchingParen(s, openParen);
         if (openParen == -1 || closeParen == -1 || closeParen >= limit) {
@@ -417,9 +449,9 @@ public final class TemplateParser {
         while (i < len) {
             if (body.startsWith("@case", i) && isWordBoundary(body, i + 5)) {
                 if (currentCaseVal != null) {
-                    cases.put(currentCaseVal, parse(body.substring(caseBodyStart, i)));
+                    cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth));
                 } else if (isDefault) {
-                    defaultBranch = parse(body.substring(caseBodyStart, i));
+                    defaultBranch = parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth);
                     isDefault = false;
                 }
 
@@ -430,7 +462,7 @@ public final class TemplateParser {
                 i = caseBodyStart;
             } else if (body.startsWith("@default", i) && isWordBoundary(body, i + 8)) {
                 if (currentCaseVal != null) {
-                    cases.put(currentCaseVal, parse(body.substring(caseBodyStart, i)));
+                    cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth));
                     currentCaseVal = null;
                 }
                 isDefault = true;
@@ -442,9 +474,9 @@ public final class TemplateParser {
         }
 
         if (currentCaseVal != null) {
-            cases.put(currentCaseVal, parse(body.substring(caseBodyStart, len)));
+            cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, len), 0, len - caseBodyStart, loopDepth));
         } else if (isDefault) {
-            defaultBranch = parse(body.substring(caseBodyStart, len));
+            defaultBranch = parseBlock(body.substring(caseBodyStart, len), 0, len - caseBodyStart, loopDepth);
         }
 
         nodes.add(new TemplateNode.SwitchNode(expr, cases, defaultBranch));

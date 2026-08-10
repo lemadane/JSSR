@@ -20,7 +20,15 @@ public sealed interface TemplateNode permits
 
     record StaticTextNode(String text) implements TemplateNode {}
 
-    record InterpolationNode(String expression, String activeAttribute) implements TemplateNode {}
+    record InterpolationNode(
+            String expression,
+            String activeAttribute,
+            boolean inTag,
+            char quoteChar,
+            boolean inScript,
+            boolean inStyle,
+            boolean inComment
+    ) implements TemplateNode {}
 
     record IfNode(String condition, List<TemplateNode> thenBranch, List<TemplateNode> elseBranch) implements TemplateNode {}
 

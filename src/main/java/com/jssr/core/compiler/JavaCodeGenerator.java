@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * AST-driven Java source code generator for JSSR precompiled JVM bytecode templates.
- * Emits direct Java rendering statements from TemplateNode AST trees.
+ * Emits direct Java rendering statements from TemplateNode AST trees while enforcing
+ * 100% security context parity with the interpreted rendering engine.
  */
 public final class JavaCodeGenerator {
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -103,18 +104,115 @@ public final class JavaCodeGenerator {
                 }
             } else if (node instanceof TemplateNode.InterpolationNode interp) {
                 String expr = interp.expression();
-                String activeAttr = interp.activeAttribute();
-                boolean isUrlAttr = activeAttr != null && URL_ATTRIBUTES.contains(activeAttr.toLowerCase(Locale.ROOT));
+                String activeAttr = interp.activeAttribute() == null ? "" : interp.activeAttribute();
+                String lowerAttr = activeAttr.toLowerCase(Locale.ROOT);
+
+                if (interp.inScript()) {
+                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectScriptInterpolation(\"")
+                            .append(escapeJavaString(expr)).append("\");\n");
+                } else if (interp.inStyle()) {
+                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectStyleInterpolation(\"")
+                            .append(escapeJavaString(expr)).append("\");\n");
+                } else if (interp.inComment()) {
+                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectCommentInterpolation(\"")
+                            .append(escapeJavaString(expr)).append("\");\n");
+                } else if (interp.inTag()) {
+                    if (interp.quoteChar() == 0 && !activeAttr.isEmpty()) {
+                        sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectUnquotedAttribute(\"")
+                                .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                    } else {
+                        if ("srcdoc".equals(lowerAttr)) {
+                            sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectSrcdocAttribute(\"")
+                                    .append(escapeJavaString(expr)).append("\");\n");
+                        } else if (lowerAttr.startsWith("x-") || lowerAttr.startsWith("@") || lowerAttr.startsWith(":") || lowerAttr.startsWith("hx-on")) {
+                            sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectFrameworkAttribute(\"")
+                                    .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                        } else if (lowerAttr.startsWith("on")) {
+                            sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectEventHandlerAttribute(\"")
+                                    .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                        } else if ("style".equals(lowerAttr)) {
+                            sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectStyleAttribute(\"")
+                                    .append(escapeJavaString(expr)).append("\");\n");
+                        } else if ("srcset".equals(lowerAttr) || "imagesrcset".equals(lowerAttr)) {
+                            if (canDirectCast && recordFields.containsKey(expr)) {
+                                Class<?> type = recordFields.get(expr);
+                                if (!com.jssr.core.SafeSrcSet.class.isAssignableFrom(type)) {
+                                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectInvalidSrcSet(\"")
+                                            .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                }
+                            } else {
+                                int id = varSeq.incrementAndGet();
+                                sb.append(indent).append("Object val_ss_").append(id)
+                                        .append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar)
+                                        .append(", \"").append(escapeJavaString(expr)).append("\").value();\n");
+                                sb.append(indent).append("if (val_ss_").append(id)
+                                        .append(" != null && !(val_ss_").append(id).append(" instanceof com.jssr.core.SafeSrcSet)) {\n");
+                                sb.append(indent).append("    com.jssr.core.compiler.JssrSecurity.rejectInvalidSrcSet(\"")
+                                        .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                sb.append(indent).append("}\n");
+                            }
+                        } else if ("ping".equals(lowerAttr)) {
+                            if (canDirectCast && recordFields.containsKey(expr)) {
+                                Class<?> type = recordFields.get(expr);
+                                if (!com.jssr.core.SafeUrlList.class.isAssignableFrom(type)) {
+                                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectInvalidUrlList(\"")
+                                            .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                }
+                            } else {
+                                int id = varSeq.incrementAndGet();
+                                sb.append(indent).append("Object val_ul_").append(id)
+                                        .append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar)
+                                        .append(", \"").append(escapeJavaString(expr)).append("\").value();\n");
+                                sb.append(indent).append("if (val_ul_").append(id)
+                                        .append(" != null && !(val_ul_").append(id).append(" instanceof com.jssr.core.SafeUrlList)) {\n");
+                                sb.append(indent).append("    com.jssr.core.compiler.JssrSecurity.rejectInvalidUrlList(\"")
+                                        .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                sb.append(indent).append("}\n");
+                            }
+                        } else if (URL_ATTRIBUTES.contains(lowerAttr)) {
+                            if (canDirectCast && recordFields.containsKey(expr)) {
+                                Class<?> type = recordFields.get(expr);
+                                if (!com.jssr.core.SafeUrl.class.isAssignableFrom(type)) {
+                                    sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectInvalidUrl(\"")
+                                            .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                }
+                            } else {
+                                int id = varSeq.incrementAndGet();
+                                sb.append(indent).append("Object val_url_").append(id)
+                                        .append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar)
+                                        .append(", \"").append(escapeJavaString(expr)).append("\").value();\n");
+                                sb.append(indent).append("if (val_url_").append(id)
+                                        .append(" != null && !(val_url_").append(id).append(" instanceof com.jssr.core.SafeUrl)) {\n");
+                                sb.append(indent).append("    com.jssr.core.compiler.JssrSecurity.rejectInvalidUrl(\"")
+                                        .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                                sb.append(indent).append("}\n");
+                            }
+                        }
+
+                        // For ALL attribute interpolations, reject RawHtml
+                        if (canDirectCast && recordFields.containsKey(expr)) {
+                            Class<?> type = recordFields.get(expr);
+                            if (com.jssr.core.RawHtml.class.isAssignableFrom(type)) {
+                                sb.append(indent).append("com.jssr.core.compiler.JssrSecurity.rejectRawHtmlInAttribute(\"")
+                                        .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                            }
+                        } else {
+                            int id = varSeq.incrementAndGet();
+                            sb.append(indent).append("Object val_raw_").append(id)
+                                    .append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar)
+                                    .append(", \"").append(escapeJavaString(expr)).append("\").value();\n");
+                            sb.append(indent).append("if (val_raw_").append(id)
+                                    .append(" instanceof com.jssr.core.RawHtml) {\n");
+                            sb.append(indent).append("    com.jssr.core.compiler.JssrSecurity.rejectRawHtmlInAttribute(\"")
+                                    .append(escapeJavaString(expr)).append("\", \"").append(escapeJavaString(activeAttr)).append("\");\n");
+                            sb.append(indent).append("}\n");
+                        }
+                    }
+                }
 
                 if (canDirectCast && recordFields.containsKey(expr)) {
                     Class<?> type = recordFields.get(expr);
-                    if (isUrlAttr && !com.jssr.core.SafeUrl.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("if (c.").append(expr).append("() != null) {\n");
-                        sb.append(indent).append("    throw new IllegalArgumentException(\"JSSR interpolation ${")
-                                .append(expr).append("} inside URL attribute '").append(escapeJavaString(activeAttr))
-                                .append("' requires a SafeUrl field type instead of ").append(type.getSimpleName()).append("\");\n");
-                        sb.append(indent).append("}\n");
-                    } else if (type == boolean.class || type == Boolean.class ||
+                    if (type == boolean.class || type == Boolean.class ||
                         type == int.class || type == Integer.class ||
                         type == long.class || type == Long.class ||
                         type == double.class || type == Double.class ||
@@ -130,18 +228,6 @@ public final class JavaCodeGenerator {
                         sb.append(indent).append("sb.append(JssrComponent.escapeHtml(c.").append(expr).append("() != null ? String.valueOf(c.").append(expr).append("()) : \"\"));\n");
                     }
                 } else {
-                    if (isUrlAttr) {
-                        int id = varSeq.incrementAndGet();
-                        sb.append(indent).append("Object val_url_").append(id)
-                                .append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar)
-                                .append(", \"").append(escapeJavaString(expr)).append("\").value();\n");
-                        sb.append(indent).append("if (val_url_").append(id)
-                                .append(" != null && !(val_url_").append(id).append(" instanceof com.jssr.core.SafeUrl)) {\n");
-                        sb.append(indent).append("    throw new IllegalArgumentException(\"JSSR interpolation ${")
-                                .append(expr).append("} inside URL attribute '").append(escapeJavaString(activeAttr))
-                                .append("' requires a SafeUrl field type instead of \" + val_url_").append(id).append(".getClass().getSimpleName());\n");
-                        sb.append(indent).append("}\n");
-                    }
                     sb.append(indent).append("sb.append(JssrComponent.renderInterpolatedExpression(component, ").append(currentScopeVar).append(", \"")
                             .append(escapeJavaString(expr)).append("\"));\n");
                 }
@@ -227,13 +313,13 @@ public final class JavaCodeGenerator {
                 String expr = throwNode.expression().replace("'", "").replace("\"", "");
                 sb.append(indent).append("if (true) throw new RuntimeException(\"")
                         .append(escapeJavaString(expr)).append("\");\n");
-                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
+                break;
             } else if (node instanceof TemplateNode.ContinueNode) {
                 sb.append(indent).append("continue;\n");
-                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
+                break;
             } else if (node instanceof TemplateNode.BreakNode) {
                 sb.append(indent).append("break;\n");
-                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
+                break;
             } else if (node instanceof TemplateNode.SwitchNode switchNode) {
                 int id = varSeq.incrementAndGet();
                 String expr = switchNode.expression();
