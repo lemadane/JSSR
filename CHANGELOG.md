@@ -6,18 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.3.0] - 2026-08-11
 
-### Complete AST Code Generation, Spring Boot Fat JAR E2E & Maven Central Release
+### Complete Shared Security, AST Precompiler Parity & Maven Central Release
 
 #### Added
-- **Direct AST → Java Rendering Code Generator (`com.jssr.core.compiler.JavaCodeGenerator`)**: Replaced all runtime interpreter delegations (`processControlFlow`, `interpolateVariables`, `processCustomTags`) in precompiled templates with native Java rendering statements (`sb.append(...)`, typed record accessors, native `if`, `for`, `switch`, `try-catch`, `continue`, `break`).
+- **Complete AST → Java Rendering Code Generator (`com.jssr.core.compiler.JavaCodeGenerator`)**: Replaced all runtime interpreter delegations (`processControlFlow`, `interpolateVariables`, `processCustomTags`) in precompiled templates with native Java rendering statements (`sb.append(...)`, typed record accessors, native `if`, `for`, `switch`, `try-catch`, `continue`, `break`).
+- **Context-Aware Quoted Attribute Escaping**: Enforced strict HTML attribute entity escaping (`JssrComponent.escapeHtml(...)`) when `JssrComponent`, `HtmlAttribute`, `SafeUrl`, `SafeSrcSet`, or `SafeUrlList` instances are interpolated inside quoted attribute values (`title="${child}"`), preventing attribute breakout and XSS injections.
+- **Lazy On-Demand Precompiled Child Component Rendering**: Implemented `JssrPrecompiler.renderPrecompiled(child)` for nested JSSR components inside AST generated code, preserving precompiled rendering semantics while preventing `ConcurrentHashMap` recursive update locks (`IllegalStateException: Recursive update`).
+- **Full Shared URL Security Policy Parity (`JssrSecurity.classifyAttribute`)**: Centralized attribute security classification across both interpreted (`JssrComponent.java`) and precompiled (`JavaCodeGenerator.java`) engines, guaranteeing 100% security parity across all URL attributes (`href`, `src`, `action`, `formaction`, `poster`, `xlink:href`, `data`, `srcset`, `imagesrcset`, `ping`, `codebase`, `icon`, `manifest`, `profile`, `cite`, `longdesc`, `usemap`).
+- **Boxed Primitive Parity & Primitive Support**: Added direct fast-path statement generation for primitive `short`, `byte`, `char`, and boxed types (`Boolean`, `Integer`, `Long`, `Double`, `Float`, `Short`, `Byte`, `Character`), safely rendering empty strings (`""`) for null boxed numbers and using `Boolean.TRUE.equals(...)` for boxed free-standing booleans.
+- **Differential & Security Parity Test Suites (`DifferentialRendererTest.java`, `PrecompiledSecurityParityTest.java`)**: Created comprehensive differential test suite verifying 100% output equality between interpreted and precompiled AST rendering across text, quoted attributes, free-standing booleans, nested booleans, `RawHtml(null)`, `Optional`, self-referencing tree components (`TreeNode`), and control flow.
 - **Process-Isolated Executable-JAR Integration Subproject (`integration-tests/boot-jar`)**: Built dedicated Spring Boot fat JAR test application and `RealBootJarIntegrationTest.java` that spawns `java -jar` as a separate OS process, issues HTTP GET requests, and asserts `CompilationStatus.COMPILED` under Spring Boot's `LaunchedURLClassLoader`.
-- **Spring Boot Fat JAR Nested ClassPath Extraction (`InMemoryBytecodeCompiler.java`)**: Added automatic temporary extraction (`jssr-boot-cp-<hash>`) of nested archive entries (`BOOT-INF/classes` and `BOOT-INF/lib/*.jar`) to enable JDK `javax.tools.JavaCompiler` resolution inside packaged fat JARs.
 - **Dedicated JMH CI & Release Benchmark Pipeline (`.github/workflows/ci.yml`, `.github/workflows/release.yml`)**: Added dedicated `benchmark` job to CI running `./gradlew jmh --no-configuration-cache` with artifact uploads and GitHub Release attachments (`results.txt`, `results.json`).
 - **Maven Central GPG Key Signing & Publishing (`build.gradle`, `.github/workflows/release.yml`)**: Applied Gradle `signing` plugin with `useInMemoryPgpKeys` and Sonatype OSSRH Maven Central staging repository deployment.
+- **GitHub Actions Setup-Java Upgrade (`.github/workflows/ci.yml`)**: Upgraded GitHub Actions workflow Java toolchain setup action from `v4` to `v5`.
 
 #### Fixed
-- **CI Runtime Java Matrix Parameterization (`build.gradle`, `.github/workflows/ci.yml`)**: Parameterized test runner launcher via `-PtestJavaVersion` so CI jobs actually execute tests on JDK 17, 21, and 25 runtimes.
-- **Precompiled Attribute Security Parity**: Enforced `SafeUrl` attribute sanitization rules inside dynamic HTML URL attributes (`href`, `src`, `action`, `formaction`, etc.) at AST generation time.
+- **Precompiler Cache Thread-Safety (`JssrPrecompiler.java`)**: Removed eager child precompilation inside `COMPILED_CACHE.computeIfAbsent(...)`, completely eliminating `IllegalStateException: Recursive update` on `ConcurrentHashMap` during concurrent or nested component compilation.
+- **CI Runtime Java Matrix Parameterization (`build.gradle`, `.github/workflows/ci.yml`)**: Parameterized test runner launcher via `-PtestJavaVersion` so CI jobs execute tests across JDK 17, 21, and 25 runtimes.
 
 ---
 
