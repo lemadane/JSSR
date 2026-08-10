@@ -121,6 +121,20 @@ public class DifferentialRendererTest {
         }
     }
 
+    public record TreeNode(String name, TreeNode child) implements JssrComponent {
+        @Override
+        public String template() {
+            return """
+                <div>
+                    <span>${name}</span>
+                    @if (child != null)
+                        ${child}
+                    @end
+                </div>
+                """;
+        }
+    }
+
     public record BoxedPrimitiveCard(
         Boolean flag,
         Integer num,
@@ -333,6 +347,14 @@ public class DifferentialRendererTest {
         String compiled = card.renderPrecompiled();
         assertFalse(compiled.contains("\" onmouseover=\""), "Quotes inside child component rendered in attribute must be HTML-escaped");
         assertTrue(compiled.contains("&amp;quot;"), "Quotes inside child component rendered in attribute must be HTML-escaped");
+    }
+
+    @Test
+    @DisplayName("Differential test: recursive self-referencing component (TreeNode)")
+    void testRecursiveTreeNodeDifferential() {
+        TreeNode tree = new TreeNode("Root", new TreeNode("Child 1", new TreeNode("Child 2", null)));
+        assertDifferentialParity(tree, TreeNode.class);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(TreeNode.class));
     }
 
     @Test

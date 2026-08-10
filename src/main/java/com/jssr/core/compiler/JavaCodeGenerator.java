@@ -272,9 +272,9 @@ public final class JavaCodeGenerator {
                         }
                     } else if (JssrComponent.class.isAssignableFrom(type)) {
                         if (isQuotedAttr) {
-                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(com.jssr.core.compiler.JssrPrecompiler.renderPrecompiled(c.").append(expr).append("())) : \"\");\n");
                         } else {
-                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? com.jssr.core.compiler.JssrPrecompiler.renderPrecompiled(c.").append(expr).append("()) : \"\");\n");
                         }
                     } else {
                         sb.append(indent).append("sb.append(JssrComponent.escapeHtml(c.").append(expr).append("() != null ? String.valueOf(c.").append(expr).append("()) : \"\"));\n");
