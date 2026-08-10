@@ -1,5 +1,7 @@
 package com.jssr.core;
 
+import com.jssr.core.compiler.CompilationFailureMode;
+import com.jssr.core.compiler.CompilationStatus;
 import com.jssr.core.compiler.JssrPrecompiler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,12 +18,14 @@ public class PrecompiledControlFlowTest {
     void setUp() {
         JssrPrecompiler.clearCache();
         JssrPrecompiler.enableGlobalPrecompilation(true);
+        JssrPrecompiler.setFailureMode(CompilationFailureMode.FAIL_FAST);
     }
 
     @AfterEach
     void tearDown() {
         JssrPrecompiler.clearCache();
         JssrPrecompiler.enableGlobalPrecompilation(false);
+        JssrPrecompiler.setFailureMode(CompilationFailureMode.WARN_AND_FALLBACK);
     }
 
     public record AdminUser(String name, String role) {}
@@ -105,6 +109,7 @@ public class PrecompiledControlFlowTest {
         UserBadgeCard adminCard = new UserBadgeCard(new AdminUser("Alice", "SuperAdmin"));
         String adminHtml = adminCard.render();
         assertTrue(adminHtml.contains("Admin: Alice (SuperAdmin)"));
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(UserBadgeCard.class));
 
         UserBadgeCard userCard = new UserBadgeCard(new RegularUser("Bob"));
         String userHtml = userCard.render();
@@ -122,6 +127,7 @@ public class PrecompiledControlFlowTest {
         String activeHtml = activeTasks.render();
         assertTrue(activeHtml.contains("<li>Deploy App</li>"));
         assertTrue(activeHtml.contains("<li>Run Security Scan</li>"));
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(TaskListCard.class));
 
         TaskListCard emptyTasks = new TaskListCard(List.of());
         String emptyHtml = emptyTasks.render();
@@ -133,6 +139,8 @@ public class PrecompiledControlFlowTest {
     void testPrecompiledLoopControlDirectives() {
         LoopControlCard card = new LoopControlCard(List.of(-1, 2, -5, 4, 15, 6));
         String html = card.render();
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(LoopControlCard.class),
+                "LoopControlCard must achieve COMPILED status without unreachable statement compilation errors");
         assertFalse(html.contains("<span>-1</span>"));
         assertTrue(html.contains("<span>2</span>"));
         assertFalse(html.contains("<span>-5</span>"));
@@ -146,6 +154,8 @@ public class PrecompiledControlFlowTest {
     void testPrecompiledErrorBoundary() {
         ErrorBoundaryCard normal = new ErrorBoundaryCard(false);
         String normalHtml = normal.render();
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(ErrorBoundaryCard.class),
+                "ErrorBoundaryCard must achieve COMPILED status without unreachable statement compilation errors");
         assertTrue(normalHtml.contains("<p>All normal</p>"));
         assertTrue(normalHtml.contains("<p class=\"footer\">Done</p>"));
 

@@ -109,9 +109,11 @@ public final class JavaCodeGenerator {
                 if (canDirectCast && recordFields.containsKey(expr)) {
                     Class<?> type = recordFields.get(expr);
                     if (isUrlAttr && !com.jssr.core.SafeUrl.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("throw new IllegalArgumentException(\"JSSR interpolation ${")
+                        sb.append(indent).append("if (c.").append(expr).append("() != null) {\n");
+                        sb.append(indent).append("    throw new IllegalArgumentException(\"JSSR interpolation ${")
                                 .append(expr).append("} inside URL attribute '").append(escapeJavaString(activeAttr))
                                 .append("' requires a SafeUrl field type instead of ").append(type.getSimpleName()).append("\");\n");
+                        sb.append(indent).append("}\n");
                     } else if (type == boolean.class || type == Boolean.class ||
                         type == int.class || type == Integer.class ||
                         type == long.class || type == Long.class ||
@@ -225,10 +227,13 @@ public final class JavaCodeGenerator {
                 String expr = throwNode.expression().replace("'", "").replace("\"", "");
                 sb.append(indent).append("if (true) throw new RuntimeException(\"")
                         .append(escapeJavaString(expr)).append("\");\n");
+                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
             } else if (node instanceof TemplateNode.ContinueNode) {
                 sb.append(indent).append("continue;\n");
+                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
             } else if (node instanceof TemplateNode.BreakNode) {
                 sb.append(indent).append("break;\n");
+                break; // Terminal statement: discard subsequent unreachable sibling AST nodes
             } else if (node instanceof TemplateNode.SwitchNode switchNode) {
                 int id = varSeq.incrementAndGet();
                 String expr = switchNode.expression();
