@@ -114,4 +114,33 @@ class JssrBytecodeCompilerTest {
         UnsafeStringUrlCard card = new UnsafeStringUrlCard("https://example.com");
         assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
     }
+
+    @Test
+    @DisplayName("Verify compilation status and diagnostics report generation")
+    void testCompilationStatusAndReport() {
+        assertEquals(com.jssr.core.compiler.CompilationStatus.NOT_COMPILED, JssrPrecompiler.status(SimpleUser.class));
+
+        com.jssr.core.compiler.CompilationReport report = JssrPrecompiler.precompileAll(
+                java.util.List.of(SimpleUser.class, SecurityTestCard.class)
+        );
+
+        assertNotNull(report);
+        assertEquals(2, report.totalDiscovered());
+        assertEquals(2, report.compiledCount());
+        assertEquals(0, report.fallbackCount());
+        assertEquals(0, report.failedCount());
+
+        assertEquals(com.jssr.core.compiler.CompilationStatus.COMPILED, JssrPrecompiler.status(SimpleUser.class));
+        assertEquals(com.jssr.core.compiler.CompilationStatus.COMPILED, JssrPrecompiler.status(SecurityTestCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify CompilationFailureMode settings and default behavior")
+    void testFailureModeConfiguration() {
+        assertEquals(com.jssr.core.compiler.CompilationFailureMode.WARN_AND_FALLBACK, JssrPrecompiler.getFailureMode());
+        JssrPrecompiler.setFailureMode(com.jssr.core.compiler.CompilationFailureMode.FAIL_FAST);
+        assertEquals(com.jssr.core.compiler.CompilationFailureMode.FAIL_FAST, JssrPrecompiler.getFailureMode());
+        JssrPrecompiler.setFailureMode(com.jssr.core.compiler.CompilationFailureMode.WARN_AND_FALLBACK);
+    }
 }
+

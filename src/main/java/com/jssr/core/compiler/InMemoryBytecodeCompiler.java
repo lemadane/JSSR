@@ -182,10 +182,16 @@ public final class InMemoryBytecodeCompiler {
 
     private static void addClassRoot(Class<?> clazz, List<String> cpElements) {
         try {
-            var location = clazz.getProtectionDomain().getCodeSource() != null 
-                    ? clazz.getProtectionDomain().getCodeSource().getLocation() : null;
-            if (location != null) {
-                cpElements.add(new java.io.File(location.toURI()).getAbsolutePath());
+            var codeSource = clazz.getProtectionDomain().getCodeSource();
+            if (codeSource != null && codeSource.getLocation() != null) {
+                java.net.URL location = codeSource.getLocation();
+                String protocol = location.getProtocol();
+                if ("file".equalsIgnoreCase(protocol)) {
+                    cpElements.add(new java.io.File(location.toURI()).getAbsolutePath());
+                } else if ("jar".equalsIgnoreCase(protocol) || "nested".equalsIgnoreCase(protocol)) {
+                    String urlStr = location.toExternalForm();
+                    addJarOrNestedPath(urlStr, cpElements);
+                }
             }
         } catch (Exception ignored) {}
 
@@ -193,21 +199,40 @@ public final class InMemoryBytecodeCompiler {
             String classResourceName = clazz.getSimpleName() + ".class";
             java.net.URL url = clazz.getResource(classResourceName);
             if (url != null) {
-                String urlStr = url.toExternalForm();
-                String pkgPath = clazz.getPackageName().replace('.', '/') + "/" + classResourceName;
-                if (urlStr.endsWith(pkgPath)) {
-                    String rootUrlStr = urlStr.substring(0, urlStr.length() - pkgPath.length());
-                    if (rootUrlStr.startsWith("file:")) {
-                        java.io.File file = new java.io.File(new java.net.URI(rootUrlStr));
+                addJarOrNestedPath(url.toExternalForm(), cpElements);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static void addJarOrNestedPath(String urlStr, List<String> cpElements) {
+        if (urlStr == null || urlStr.isBlank()) return;
+        try {
+            if (urlStr.startsWith("jar:file:")) {
+                int bang = urlStr.indexOf("!");
+                if (bang != -1) {
+                    String fileUriStr = urlStr.substring(4, bang);
+                    java.io.File file = new java.io.File(new java.net.URI(fileUriStr));
+                    if (file.exists()) {
                         cpElements.add(file.getAbsolutePath());
-                    } else if (rootUrlStr.startsWith("jar:file:")) {
-                        int bang = rootUrlStr.indexOf("!");
-                        if (bang != -1) {
-                            String jarUriStr = rootUrlStr.substring(4, bang);
-                            java.io.File file = new java.io.File(new java.net.URI(jarUriStr));
-                            cpElements.add(file.getAbsolutePath());
-                        }
                     }
+                }
+            } else if (urlStr.contains("nested:")) {
+                int nestedIdx = urlStr.indexOf("nested:");
+                String nestedSub = urlStr.substring(nestedIdx + 7);
+                int bang = nestedSub.indexOf("/!");
+                if (bang != -1) {
+                    String outerPath = nestedSub.substring(0, bang);
+                    java.io.File file = new java.io.File(outerPath);
+                    if (file.exists()) {
+                        cpElements.add(file.getAbsolutePath());
+                    }
+                }
+            } else if (urlStr.startsWith("file:")) {
+                int bang = urlStr.indexOf("!");
+                String fileUriStr = (bang != -1) ? urlStr.substring(0, bang) : urlStr;
+                java.io.File file = new java.io.File(new java.net.URI(fileUriStr));
+                if (file.exists()) {
+                    cpElements.add(file.getAbsolutePath());
                 }
             }
         } catch (Exception ignored) {}

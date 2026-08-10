@@ -4,6 +4,23 @@ All notable changes to the **JSSR (Java Server-Side Rendering)** project will be
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-10
+
+### Production Readiness & AST Precompiler Architecture Release
+
+#### Added
+- **AST-Based Precompiled JVM Engine (`com.jssr.core.compiler.ast`)**: Integrated Abstract Syntax Tree (AST) node parsing (`TemplateNode`, `TemplateParser`) into `JavaCodeGenerator` to compile Record template ASTs directly into JVM bytecode instructions.
+- **Precompiler Failure Observability & Status API**: Added `CompilationStatus` (`NOT_COMPILED`, `COMPILED`, `FALLBACK`, `FAILED`), `CompilationFailureMode` (`FAIL_FAST`, `WARN_AND_FALLBACK`, `SILENT_FALLBACK`), and `CompilationReport` to `JssrPrecompiler`.
+- **Zero-Dependency Diagnostic Logging**: Integrated JDK's standard `System.Logger` inside `JssrPrecompiler` to emit warning diagnostics when template compilation fails or falls back to interpreted mode.
+- **Production Executable-JAR Compatibility**: Enhanced `InMemoryBytecodeCompiler` classloader scanning to resolve class locations inside packaged Spring Boot executable JARs (`BOOT-INF/classes`, `BOOT-INF/lib`, `jar:file:`, `nested:`). Added `ExecutableJarTest.java`.
+- **JMH Microbenchmark Suite (`src/jmh/java`)**: Configured Gradle JMH plugin (`me.champeau.jmh`) and created benchmark suite (`SimpleComponentBenchmark`, `ControlFlowBenchmark`, `LargeListBenchmark`) measuring throughput across realistic rendering scenarios.
+- **Maven Central Release Automation (`.github/workflows/release.yml`)**: Updated release pipeline and `build.gradle` POM metadata, attaching `jssr.jar`, `jssr-sources.jar`, and `jssr-javadoc.jar` to GitHub Releases.
+
+#### Fixed
+- **Library Configuration Isolation**: Removed `src/main/resources/application.properties` from the production core JAR to prevent polluting consumer applications' Spring Boot configurations. Added `PackagingTest.java`.
+
+---
+
 ## [1.2.0] - 2026-08-09
 
 ### Precompiled JVM Bytecode Engine (PTE Architecture Parity)

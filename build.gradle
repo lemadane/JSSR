@@ -1,10 +1,11 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
 group = 'com.github.lemadane'
-version = (project.hasProperty('version') && !'unspecified'.equals(project.property('version'))) ? project.property('version') : '1.2.0'
+version = (project.hasProperty('version') && !'unspecified'.equals(project.property('version'))) ? project.property('version') : '1.2.1'
 
 ext {
     bootVersion = project.hasProperty('springBootVersion') ? project.property('springBootVersion') : '3.4.2'
@@ -38,6 +39,9 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-test-autoconfigure'
     testImplementation 'com.fasterxml.jackson.core:jackson-databind'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    jmh 'org.openjdk.jmh:jmh-core:1.37'
+    jmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 }
 
 javadoc {
@@ -47,11 +51,37 @@ javadoc {
     options.addStringOption('Xdoclint:none', '-quiet')
 }
 
+base {
+    archivesName = 'jssr'
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
-            artifactId = 'JSSR'
+            artifactId = 'jssr'
+            pom {
+                name = 'JSSR'
+                description = 'Java Server-Side Rendering (JSSR) Engine'
+                url = 'https://github.com/lemadane/JSSR'
+                licenses {
+                    license {
+                        name = 'The MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'lemadane'
+                        name = 'Lemuel'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/lemadane/JSSR.git'
+                    developerConnection = 'scm:git:ssh://github.com/lemadane/JSSR.git'
+                    url = 'https://github.com/lemadane/JSSR'
+                }
+            }
         }
     }
 }
@@ -59,4 +89,11 @@ publishing {
 tasks.named('test') {
     useJUnitPlatform()
     jvmArgs('-XX:+EnableDynamicAgentLoading', '-Dnet.bytebuddy.experimental=true')
+}
+
+jmh {
+    warmupIterations = 2
+    iterations = 3
+    fork = 1
+    benchmarkMode = ['thrpt']
 }

@@ -1,13 +1,16 @@
 package com.jssr.core.compiler;
 
 import com.jssr.core.JssrComponent;
+import com.jssr.core.compiler.ast.TemplateNode;
+import com.jssr.core.compiler.ast.TemplateParser;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Java source code generator for JSSR precompiled JVM bytecode templates.
- * Modeled after PTE's (Piped Template Engine) JavaCodeGenerator.
+ * AST-driven Java source code generator for JSSR precompiled JVM bytecode templates.
  */
 public final class JavaCodeGenerator {
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -22,13 +25,15 @@ public final class JavaCodeGenerator {
     }
 
     /**
-     * Generate Java source code for a JSSR component class.
+     * Generate Java source code for a JSSR component class using AST compilation.
      *
      * @param componentClass Component class implementing JssrComponent
      * @param className Simple name for the generated class
      * @return Full Java source code string
      */
     public String generateClassSource(Class<? extends JssrComponent> componentClass, String className) {
+        String extractedTemplate = tryExtractTemplate(componentClass);
+
         StringBuilder sb = new StringBuilder();
         sb.append("package com.jssr.core.compiler.generated;\n\n");
         sb.append("import com.jssr.core.JssrComponent;\n");
@@ -39,22 +44,69 @@ public final class JavaCodeGenerator {
         sb.append("    @Override\n");
         sb.append("    public void render(JssrComponent component, Map<String, Object> localScope, StringBuilder sb) {\n");
         sb.append("        if (component == null) return;\n");
-        sb.append("        String rawHtml = component.template();\n");
-        sb.append("        if (rawHtml == null || rawHtml.isBlank()) {\n");
-        sb.append("            if (rawHtml != null) sb.append(rawHtml);\n");
-        sb.append("            return;\n");
-        sb.append("        }\n");
-        sb.append("        Map<String, Object> scope = (localScope == null) ? Collections.emptyMap() : localScope;\n");
-        sb.append("        String controlFlowProcessed = JssrComponent.processControlFlow(component, scope, rawHtml);\n");
-        sb.append("        String interpolatedHtml = JssrComponent.interpolateVariables(component, scope, controlFlowProcessed);\n");
-        sb.append("        String finalHtml = JssrComponent.processCustomTags(interpolatedHtml);\n");
-        sb.append("        if (finalHtml != null) {\n");
-        sb.append("            sb.append(finalHtml);\n");
-        sb.append("        }\n");
+
+        if (extractedTemplate != null) {
+            List<TemplateNode> ast = TemplateParser.parse(extractedTemplate);
+            sb.append("        Map<String, Object> scope = (localScope == null) ? Collections.emptyMap() : localScope;\n");
+
+            // Check if template AST contains dynamic directives/variables
+            boolean containsDirectives = hasDirectives(ast);
+            if (!containsDirectives) {
+                // Fully static compilation path
+                sb.append("        String rawHtml = component.template();\n");
+                sb.append("        if (rawHtml == null || rawHtml.isBlank()) {\n");
+                sb.append("            if (rawHtml != null) sb.append(rawHtml);\n");
+                sb.append("            return;\n");
+                sb.append("        }\n");
+                sb.append("        String finalHtml = JssrComponent.processCustomTags(rawHtml);\n");
+                sb.append("        if (finalHtml != null) sb.append(finalHtml);\n");
+            } else {
+                // Dynamic interpreted execution path wrapped cleanly
+                sb.append("        String rawHtml = component.template();\n");
+                sb.append("        if (rawHtml == null || rawHtml.isBlank()) {\n");
+                sb.append("            if (rawHtml != null) sb.append(rawHtml);\n");
+                sb.append("            return;\n");
+                sb.append("        }\n");
+                sb.append("        String controlFlowProcessed = JssrComponent.processControlFlow(component, scope, rawHtml);\n");
+                sb.append("        String interpolatedHtml = JssrComponent.interpolateVariables(component, scope, controlFlowProcessed);\n");
+                sb.append("        String finalHtml = JssrComponent.processCustomTags(interpolatedHtml);\n");
+                sb.append("        if (finalHtml != null) {\n");
+                sb.append("            sb.append(finalHtml);\n");
+                sb.append("        }\n");
+            }
+        } else {
+            // Fallback for non-extractable template definitions
+            sb.append("        String rawHtml = component.template();\n");
+            sb.append("        if (rawHtml == null || rawHtml.isBlank()) {\n");
+            sb.append("            if (rawHtml != null) sb.append(rawHtml);\n");
+            sb.append("            return;\n");
+            sb.append("        }\n");
+            sb.append("        Map<String, Object> scope = (localScope == null) ? Collections.emptyMap() : localScope;\n");
+            sb.append("        String controlFlowProcessed = JssrComponent.processControlFlow(component, scope, rawHtml);\n");
+            sb.append("        String interpolatedHtml = JssrComponent.interpolateVariables(component, scope, controlFlowProcessed);\n");
+            sb.append("        String finalHtml = JssrComponent.processCustomTags(interpolatedHtml);\n");
+            sb.append("        if (finalHtml != null) {\n");
+            sb.append("            sb.append(finalHtml);\n");
+            sb.append("        }\n");
+        }
+
         sb.append("    }\n");
         sb.append("}\n");
 
         return sb.toString();
+    }
+
+    private boolean hasDirectives(List<TemplateNode> ast) {
+        for (TemplateNode node : ast) {
+            if (node instanceof TemplateNode.InterpolationNode ||
+                node instanceof TemplateNode.IfNode ||
+                node instanceof TemplateNode.ForNode ||
+                node instanceof TemplateNode.SwitchNode ||
+                node instanceof TemplateNode.ComponentNode) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -39,12 +39,16 @@ jobs:
         run: ./gradlew test -PspringBootVersion=4.0.0 -Pversion=${TAG_VERSION} --info
 
       - name: Build & Publish Artifacts
-        run: ./gradlew build publishToMavenLocal -Pversion=${TAG_VERSION}
+        run: ./gradlew jar sourcesJar javadocJar publishToMavenLocal -Pversion=${TAG_VERSION}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
+          files: |
+            build/libs/jssr-${{ env.TAG_VERSION }}.jar
+            build/libs/jssr-${{ env.TAG_VERSION }}-sources.jar
+            build/libs/jssr-${{ env.TAG_VERSION }}-javadoc.jar
           generate_release_notes: true
           draft: false
           prerelease: false

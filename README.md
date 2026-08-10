@@ -773,6 +773,53 @@ public record PreferencesForm(
 
 ---
 
+## ⚡ Precompiled AST Engine & Failure Observability
+
+JSSR includes a production-grade dynamic in-memory JVM precompiler that parses Record component HTML templates into an Abstract Syntax Tree (AST) (`TemplateNode`, `TemplateParser`) and compiles them into pure JVM bytecode classes (`.class` bytes) loaded in memory using JDK's standard `javax.tools.JavaCompiler`.
+
+### 1. Failure Observability & Status Diagnostics
+
+To prevent hidden operational fallbacks, JSSR provides explicit compilation status tracking and failure policies:
+
+```java
+// Check compilation status for a component (COMPILED, FALLBACK, NOT_COMPILED, FAILED)
+CompilationStatus status = JssrPrecompiler.status(UserCard.class);
+
+// Configure compilation failure policy
+JssrPrecompiler.setFailureMode(CompilationFailureMode.WARN_AND_FALLBACK); // Default
+// Modes: FAIL_FAST, WARN_AND_FALLBACK, SILENT_FALLBACK
+
+// Batch precompile components and receive a diagnostic report
+CompilationReport report = JssrPrecompiler.precompileAll(List.of(UserCard.class, UserForm.class));
+System.out.printf("Compiled: %d, Fallback: %d, Failed: %d (Time: %d ms)%n",
+        report.compiledCount(), report.fallbackCount(), report.failedCount(), report.elapsedTimeMs());
+```
+
+* **Zero-Dependency Logging**: Failure diagnostics are logged via Java's native `System.Logger` without requiring external logging dependencies.
+* **Spring Boot Executable JAR Compatibility**: The dynamic compiler automatically handles `BOOT-INF/classes`, `BOOT-INF/lib`, `jar:file:`, and `nested:` URI classloader protocols when running inside packaged Spring Boot executable JARs (`java -jar application.jar`).
+
+---
+
+## 📊 JMH Performance Benchmarking Suite
+
+JSSR includes a dedicated [JMH (Java Microbenchmark Harness)](https://github.com/openjdk/jmh) benchmarking suite to measure exact rendering throughput under controlled JVM environments (warm-up, JIT compilation, GC control).
+
+### Running JMH Benchmarks
+
+Execute the JMH benchmark suite via Gradle:
+
+```bash
+# Compile and run JMH benchmark suite
+./gradlew jmh
+```
+
+Benchmarks under `src/jmh/java/com/jssr/benchmark/` measure:
+- `SimpleComponentBenchmark`: Single component template rendering throughput.
+- `ControlFlowBenchmark`: `@if`/`@else` conditional directive throughput.
+- `LargeListBenchmark`: 100-row table iteration throughput.
+
+---
+
 ## 🛠️ VS Code Extension & IDE Tooling
 
 JSSR includes a native VS Code extension located in [`editors/vscode/`](file:///home/lem/Projects/java/JSSR/editors/vscode) providing automatic HTML/JSX syntax highlighting, template auto-formatting (`Shift+Alt+F`), JSSR control flow directive colorization, and code snippets (`jssr-comp`, `j-if`, `j-for`, `j-switch`, `j-try`) inside Java 17 multiline text blocks (`"""..."""`).
@@ -800,40 +847,53 @@ Reload VS Code to enable instant HTML/JSX syntax highlighting and snippets for J
 
 ```
 JSSR/
-├── .github/workflows/ci.yml              # GitHub Actions CI workflow
-├── build.gradle                          # Groovy-Gradle configuration
+├── .github/workflows/
+│   ├── ci.yml                            # GitHub Actions CI matrix workflow (Java 17, 21, 25 & Boot 3/4)
+│   └── release.yml                       # Release workflow publishing signed JARs, sources, & Javadoc
+├── build.gradle                          # Groovy-Gradle configuration with JMH & Maven publishing
 ├── editors/
 │   └── vscode/                           # VS CODE EXTENSION (Syntax Highlighting & Snippets)
-│       ├── package.json
-│       ├── README.md
-│       ├── snippets/jssr-snippets.json
-│       └── syntaxes/jssr-injection.json
 ├── jitpack.yml                           # JitPack build configuration
 ├── LICENSE                               # MIT License
 ├── README.md                             # Documentation
-└── src/
-    ├── main/
-    │   └── java/com/jssr/                # PURE REUSABLE JSSR UI LIBRARY
-    │       ├── core/
-    │       │   ├── JssrComponent.java    # Interface for Record-based components & tag engine
-    │       │   ├── RawHtml.java          # Wrapper for trusted unescaped HTML
-    │       │   └── SafeUrl.java          # Wrapper for URL protocol sanitization
-    │       └── spring/
-    │           ├── JssrConverter.java    # Converts JssrComponent to HTML HTTP responses
-    │           └── JssrMvcConfig.java    # Configures Spring MVC converter
-    └── test/
-        └── java/com/jssr/                # UNIT & E2E INTEGRATION TEST SUITE
+├── src/
+│   ├── main/
+│   │   └── java/com/jssr/                # PURE REUSABLE JSSR UI LIBRARY
+│   │       ├── core/
+│   │       │   ├── JssrComponent.java    # Core component interface & tag registry
+│   │       │   ├── RawHtml.java          # Wrapper for trusted unescaped HTML
+│   │       │   ├── SafeUrl.java          # Wrapper for URL protocol sanitization
+│   │       │   └── compiler/             # PRECOMPILED JVM BYTECODE ENGINE & AST
+│   │       │       ├── JssrPrecompiler.java       # Cache manager, status API & report generator
+│   │       │       ├── CompilationStatus.java     # Status enum (COMPILED, FALLBACK, FAILED)
+│   │       │       ├── CompilationFailureMode.java# Failure mode strategy
+│   │       │       ├── CompilationReport.java     # Batch precompilation report record
+│   │       │       ├── InMemoryBytecodeCompiler.java# Dynamic in-memory compiler
+│   │       │       ├── JavaCodeGenerator.java     # AST-driven Java source code generator
+│   │       │       └── ast/                       # TEMPLATE AST PARSER & NODES
+│   │       │           ├── TemplateNode.java      # Sealed AST node hierarchy
+│   │       │           └── TemplateParser.java    # Template string to AST parser
+│   │       └── spring/
+│   │           ├── JssrConverter.java    # Converts JssrComponent to HTML HTTP responses
+│   │           └── JssrMvcConfig.java    # Configures Spring MVC converter
+│   ├── jmh/
+│   │   └── java/com/jssr/benchmark/      # JMH PERFORMANCE BENCHMARK SUITE
+│   └── test/
+│       └── java/com/jssr/                # UNIT, PARSER FUZZ, PACKAGING & E2E TEST SUITE
 ```
 
 ---
 
 ## Running Tests
 
-Run unit, parser fuzz testing, E2E integration, and multi-threaded concurrency benchmark tests across default or parameterized Spring Boot target versions:
+Run unit, parser fuzz testing, packaging isolation, executable JAR verification, and Spring Boot E2E integration tests:
 
 ```bash
-# Default test suite execution (Spring Boot 3.4.2)
+# Run full test suite
 ./gradlew test
+
+# Run JMH microbenchmark throughput suite
+./gradlew jmh
 
 # Verify test suite under Spring Boot 4.0.0+
 ./gradlew test -PspringBootVersion=4.0.0
@@ -844,3 +904,4 @@ Run unit, parser fuzz testing, E2E integration, and multi-threaded concurrency b
 ## License
 
 This project is licensed under the [MIT License](file:///home/lem/Projects/java/JSSR/LICENSE).
+
