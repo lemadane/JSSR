@@ -107,6 +107,50 @@ public class DifferentialRendererTest {
         }
     }
 
+    public record ChildComponentCard(String value) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<span>${value}</span>";
+        }
+    }
+
+    public record ParentComponentAttrCard(ChildComponentCard child) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div title=\"${child}\">Test</div>";
+        }
+    }
+
+    public record BoxedPrimitiveCard(
+        Boolean flag,
+        Integer num,
+        Long longNum,
+        Double doubleNum,
+        Float floatNum,
+        Short shortNum,
+        Byte byteNum,
+        Character charVal
+    ) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div>${flag},${num},${longNum},${doubleNum},${floatNum},${shortNum},${byteNum},${charVal}</div>";
+        }
+    }
+
+    public record BoxedFreeStandingCard(Boolean checked) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${checked} />";
+        }
+    }
+
+    public record PrimitiveTypesCard(short s, byte b, char c) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<div>${s}-${b}-${c}</div>";
+        }
+    }
+
     public record RawHtmlBodyCard(RawHtml raw) implements JssrComponent {
         @Override
         public String template() {
@@ -275,6 +319,43 @@ public class DifferentialRendererTest {
     @DisplayName("Differential test: RawHtml in body content")
     void testRawHtmlBodyDifferential() {
         assertDifferentialParity(new RawHtmlBodyCard(RawHtml.of("<b>Bold Content</b>")), RawHtmlBodyCard.class);
+        assertDifferentialParity(new RawHtmlBodyCard(RawHtml.of(null)), RawHtmlBodyCard.class);
+    }
+
+    @Test
+    @DisplayName("Differential test: JssrComponent in quoted attribute must HTML-escape output")
+    void testChildComponentInQuotedAttrDifferential() {
+        assertDifferentialParity(new ChildComponentCard("\" onmouseover=\"alert(1)"), ChildComponentCard.class);
+        ParentComponentAttrCard card = new ParentComponentAttrCard(new ChildComponentCard("\" onmouseover=\"alert(1)"));
+        assertDifferentialParity(card, ParentComponentAttrCard.class);
+
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = card.renderPrecompiled();
+        assertFalse(compiled.contains("\" onmouseover=\""), "Quotes inside child component rendered in attribute must be HTML-escaped");
+        assertTrue(compiled.contains("&amp;quot;"), "Quotes inside child component rendered in attribute must be HTML-escaped");
+    }
+
+    @Test
+    @DisplayName("Differential test: null boxed primitives output empty string instead of 'null'")
+    void testNullBoxedPrimitivesDifferential() {
+        BoxedPrimitiveCard nullCard = new BoxedPrimitiveCard(null, null, null, null, null, null, null, null);
+        assertDifferentialParity(nullCard, BoxedPrimitiveCard.class);
+
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = nullCard.renderPrecompiled();
+        assertFalse(compiled.contains("null"), "Precompiled output must not render string 'null' for null boxed primitives");
+
+        BoxedPrimitiveCard nonNullCard = new BoxedPrimitiveCard(true, 1, 2L, 3.5d, 4.5f, (short) 5, (byte) 6, 'A');
+        assertDifferentialParity(nonNullCard, BoxedPrimitiveCard.class);
+
+        BoxedFreeStandingCard nullFreeStanding = new BoxedFreeStandingCard(null);
+        assertDifferentialParity(nullFreeStanding, BoxedFreeStandingCard.class);
+    }
+
+    @Test
+    @DisplayName("Differential test: short, byte, and char primitive types")
+    void testPrimitiveTypesDifferential() {
+        assertDifferentialParity(new PrimitiveTypesCard((short) 42, (byte) 7, '<'), PrimitiveTypesCard.class);
     }
 
     @Test

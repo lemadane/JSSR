@@ -234,17 +234,26 @@ public final class JavaCodeGenerator {
 
                 if (canDirectCast && recordFields.containsKey(expr)) {
                     Class<?> type = recordFields.get(expr);
+                    boolean isQuotedAttr = interp.inTag() && interp.quoteChar() != 0;
                     if (interp.inTag() && interp.quoteChar() == 0 && activeAttr.isEmpty() && (type == boolean.class || type == Boolean.class)) {
                         String attrName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
-                        sb.append(indent).append("if (c.").append(expr).append("()) sb.append(\"").append(escapeJavaString(attrName)).append("\");\n");
-                    } else if (type == boolean.class || type == Boolean.class ||
-                        type == int.class || type == Integer.class ||
-                        type == long.class || type == Long.class ||
-                        type == double.class || type == Double.class ||
-                        type == float.class || type == Float.class) {
+                        if (type == boolean.class) {
+                            sb.append(indent).append("if (c.").append(expr).append("()) sb.append(\"").append(escapeJavaString(attrName)).append("\");\n");
+                        } else {
+                            sb.append(indent).append("if (Boolean.TRUE.equals(c.").append(expr).append("())) sb.append(\"").append(escapeJavaString(attrName)).append("\");\n");
+                        }
+                    } else if (type == boolean.class || type == int.class || type == long.class ||
+                        type == double.class || type == float.class || type == short.class || type == byte.class) {
                         sb.append(indent).append("sb.append(c.").append(expr).append("());\n");
+                    } else if (type == Boolean.class || type == Integer.class || type == Long.class ||
+                        type == Double.class || type == Float.class || type == Short.class || type == Byte.class) {
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("() : \"\");\n");
+                    } else if (type == char.class) {
+                        sb.append(indent).append("sb.append(JssrComponent.escapeHtml(String.valueOf(c.").append(expr).append("())));\n");
+                    } else if (type == Character.class) {
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(String.valueOf(c.").append(expr).append("())) : \"\");\n");
                     } else if (com.jssr.core.RawHtml.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().value() : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
                     } else if (com.jssr.core.SafeUrl.class.isAssignableFrom(type)) {
                         sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
                     } else if (com.jssr.core.SafeSrcSet.class.isAssignableFrom(type)) {
@@ -256,9 +265,17 @@ public final class JavaCodeGenerator {
                     } else if (com.jssr.core.BooleanAttribute.class.isAssignableFrom(type)) {
                         sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
                     } else if (com.jssr.core.HtmlAttribute.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
+                        if (isQuotedAttr) {
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
+                        } else {
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
+                        }
                     } else if (JssrComponent.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
+                        if (isQuotedAttr) {
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
+                        } else {
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
+                        }
                     } else {
                         sb.append(indent).append("sb.append(JssrComponent.escapeHtml(c.").append(expr).append("() != null ? String.valueOf(c.").append(expr).append("()) : \"\"));\n");
                     }
@@ -458,7 +475,7 @@ public final class JavaCodeGenerator {
                 Object[] dummyArgs = new Object[rcs.length];
                 for (int i = 0; i < rcs.length; i++) {
                     paramTypes[i] = rcs[i].getType();
-                    dummyArgs[i] = getDummyValue(rcs[i].getType());
+                    dummyArgs[i] = getDummyValue(rcs[i].getName(), rcs[i].getType());
                 }
                 Constructor<? extends JssrComponent> ctor = componentClass.getDeclaredConstructor(paramTypes);
                 ctor.setAccessible(true);
@@ -475,16 +492,15 @@ public final class JavaCodeGenerator {
         }
     }
 
-    private static Object getDummyValue(Class<?> type) {
-        if (type == boolean.class || type == Boolean.class) return false;
-        if (type == int.class || type == Integer.class) return 0;
-        if (type == long.class || type == Long.class) return 0L;
-        if (type == double.class || type == Double.class) return 0.0d;
-        if (type == float.class || type == Float.class) return 0.0f;
-        if (type == short.class || type == Short.class) return (short) 0;
-        if (type == byte.class || type == Byte.class) return (byte) 0;
-        if (type == char.class || type == Character.class) return '\0';
-        if (type == String.class) return "";
+    private static Object getDummyValue(String name, Class<?> type) {
+        if (type == boolean.class) return false;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == double.class) return 0.0d;
+        if (type == float.class) return 0.0f;
+        if (type == short.class) return (short) 0;
+        if (type == byte.class) return (byte) 0;
+        if (type == char.class) return '\0';
         return null;
     }
 }

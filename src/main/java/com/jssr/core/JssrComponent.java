@@ -322,6 +322,8 @@ public interface JssrComponent {
                                 formattedVal = escapeHtml(safeSet.render());
                             } else if (val instanceof SafeUrlList safeList) {
                                 formattedVal = escapeHtml(safeList.render());
+                            } else if (val instanceof JssrComponent jc) {
+                                formattedVal = escapeHtml(jc.render());
                             } else if (val instanceof Optional<?> opt) {
                                 formattedVal = opt.map(o -> escapeHtml(o.toString())).orElse("");
                             } else {
@@ -2077,6 +2079,7 @@ public interface JssrComponent {
                 if (val instanceof SafeUrl safe) return escapeHtml(safe.render());
                 if (val instanceof SafeSrcSet safeSet) return escapeHtml(safeSet.render());
                 if (val instanceof SafeUrlList safeList) return escapeHtml(safeList.render());
+                if (val instanceof JssrComponent jc) return escapeHtml(jc.render());
                 if (val instanceof Optional<?> opt) return opt.map(o -> escapeHtml(o.toString())).orElse("");
                 return escapeHtml(val.toString());
             }

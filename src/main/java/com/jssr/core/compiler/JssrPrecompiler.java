@@ -1,6 +1,7 @@
 package com.jssr.core.compiler;
 
 import com.jssr.core.JssrComponent;
+import java.lang.reflect.RecordComponent;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.*;
@@ -109,6 +110,16 @@ public final class JssrPrecompiler {
             }
 
             try {
+                if (jcClass.isRecord()) {
+                    for (RecordComponent rc : jcClass.getRecordComponents()) {
+                        if (JssrComponent.class.isAssignableFrom(rc.getType())) {
+                            @SuppressWarnings("unchecked")
+                            Class<? extends JssrComponent> childClass = (Class<? extends JssrComponent>) rc.getType();
+                            compile(childClass);
+                        }
+                    }
+                }
+
                 String className = JavaCodeGenerator.generateUniqueClassName();
                 String sourceCode = CODE_GENERATOR.generateClassSource(jcClass, className);
 
