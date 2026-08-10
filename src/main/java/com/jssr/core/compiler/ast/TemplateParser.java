@@ -26,6 +26,13 @@ public final class TemplateParser {
         List<TemplateNode> nodes = new ArrayList<>();
         int i = start;
 
+        boolean inTag = false;
+        char quoteChar = 0;
+        String currentAttr = "";
+        String pendingAttr = "";
+        boolean seenEquals = false;
+        StringBuilder attrBuf = new StringBuilder();
+
         while (i < end) {
             int nextInterpolation = s.indexOf("${", i);
             int nextDirective = s.indexOf("@", i);
@@ -38,12 +45,65 @@ public final class TemplateParser {
             }
 
             if (next == -1 || next >= end) {
-                // Static text to the end
                 String text = s.substring(i, end);
                 if (!text.isEmpty()) {
                     nodes.add(new TemplateNode.StaticTextNode(text));
                 }
                 break;
+            }
+
+            // Update HTML attribute state tracking up to next placeholder/directive
+            for (int k = i; k < next; k++) {
+                char c = s.charAt(k);
+                if (c == '<') {
+                    inTag = true;
+                    currentAttr = "";
+                    pendingAttr = "";
+                    seenEquals = false;
+                    attrBuf.setLength(0);
+                } else if (inTag) {
+                    if (quoteChar != 0) {
+                        if (c == quoteChar) {
+                            quoteChar = 0;
+                            currentAttr = "";
+                            pendingAttr = "";
+                            seenEquals = false;
+                            attrBuf.setLength(0);
+                        }
+                    } else {
+                        if (c == '"' || c == '\'') {
+                            quoteChar = c;
+                            if (seenEquals && !pendingAttr.isEmpty()) {
+                                currentAttr = pendingAttr;
+                            } else if (!attrBuf.toString().isBlank()) {
+                                currentAttr = attrBuf.toString().trim();
+                            }
+                            attrBuf.setLength(0);
+                        } else if (c == '=') {
+                            if (!seenEquals) {
+                                if (!attrBuf.toString().isBlank()) {
+                                    pendingAttr = attrBuf.toString().trim();
+                                    attrBuf.setLength(0);
+                                }
+                                seenEquals = true;
+                            }
+                        } else if (c == '>') {
+                            inTag = false;
+                            quoteChar = 0;
+                            currentAttr = "";
+                            pendingAttr = "";
+                            seenEquals = false;
+                            attrBuf.setLength(0);
+                        } else if (Character.isWhitespace(c)) {
+                            if (!seenEquals && !attrBuf.toString().isBlank()) {
+                                pendingAttr = attrBuf.toString().trim();
+                                attrBuf.setLength(0);
+                            }
+                        } else {
+                            attrBuf.append(c);
+                        }
+                    }
+                }
             }
 
             if (next > i) {
@@ -56,7 +116,11 @@ public final class TemplateParser {
                 int closing = s.indexOf('}', i + 2);
                 if (closing != -1 && closing < end) {
                     String expr = s.substring(i + 2, closing).trim();
-                    nodes.add(new TemplateNode.InterpolationNode(expr));
+                    String activeAttr = null;
+                    if (inTag && (quoteChar != 0 || seenEquals)) {
+                        activeAttr = currentAttr.isEmpty() ? pendingAttr : currentAttr;
+                    }
+                    nodes.add(new TemplateNode.InterpolationNode(expr, activeAttr));
                     i = closing + 1;
                 } else {
                     nodes.add(new TemplateNode.StaticTextNode("${"));
@@ -68,6 +132,26 @@ public final class TemplateParser {
                 i = parseForDirective(s, i, end, nodes);
             } else if (s.startsWith("@switch", i) && isWordBoundary(s, i + 7)) {
                 i = parseSwitchDirective(s, i, end, nodes);
+            } else if (s.startsWith("@try", i) && isWordBoundary(s, i + 4)) {
+                i = parseTryDirective(s, i, end, nodes);
+            } else if (s.startsWith("@throw", i) && isWordBoundary(s, i + 6)) {
+                int openParen = s.indexOf('(', i + 6);
+                int closeParen = findMatchingParen(s, openParen);
+                if (openParen != -1 && closeParen != -1 && closeParen < end) {
+                    String expr = s.substring(openParen + 1, closeParen).trim();
+                    nodes.add(new TemplateNode.ThrowNode(expr));
+                    i = closeParen + 1;
+                    if (i < end && s.charAt(i) == ':') i++;
+                } else {
+                    nodes.add(new TemplateNode.StaticTextNode("@throw"));
+                    i += 6;
+                }
+            } else if (s.startsWith("@continue", i) && isWordBoundary(s, i + 9)) {
+                nodes.add(new TemplateNode.ContinueNode());
+                i += 9;
+            } else if (s.startsWith("@break", i) && isWordBoundary(s, i + 6)) {
+                nodes.add(new TemplateNode.BreakNode());
+                i += 6;
             } else {
                 nodes.add(new TemplateNode.StaticTextNode("@"));
                 i++;
@@ -87,8 +171,6 @@ public final class TemplateParser {
 
         String mainCond = s.substring(openParen + 1, closeParen).trim();
         int bodyStart = closeParen + 1;
-
-        // Find matching @end for this @if block while tracking nested control blocks
         int bodyEnd = findMatchingEnd(s, bodyStart, limit);
 
         String fullBody = s.substring(bodyStart, bodyEnd);
@@ -105,16 +187,13 @@ public final class TemplateParser {
     private static List<Branch> parseIfBranches(String body) {
         List<Branch> branches = new ArrayList<>();
         int len = body.length();
-        int cur = 0;
-
-        String currentCond = null;
         int currentBodyStart = 0;
-
+        String currentCond = null;
         int depth = 0;
         int i = 0;
 
         while (i < len) {
-            if (body.startsWith("@if", i) || body.startsWith("@for", i) || body.startsWith("@switch", i)) {
+            if (body.startsWith("@if", i) || body.startsWith("@for", i) || body.startsWith("@switch", i) || body.startsWith("@try", i)) {
                 depth++;
                 i++;
             } else if (body.startsWith("@end", i)) {
@@ -134,7 +213,7 @@ public final class TemplateParser {
                     String subBody = body.substring(currentBodyStart, i);
                     branches.add(new Branch(currentCond, subBody));
 
-                    currentCond = null; // @else has no condition
+                    currentCond = null;
                     currentBodyStart = i + 5;
                     i = currentBodyStart;
                 } else {
@@ -168,10 +247,8 @@ public final class TemplateParser {
 
         List<TemplateNode> elseNodes;
         if (next.cond() != null) {
-            // @elseif branch
             elseNodes = List.of(buildIfTree(next.cond(), remaining));
         } else {
-            // @else branch
             elseNodes = parse(next.body());
         }
 
@@ -202,10 +279,116 @@ public final class TemplateParser {
         int bodyStart = closeParen + 1;
         int bodyEnd = findMatchingEnd(s, bodyStart, limit);
 
-        String body = s.substring(bodyStart, bodyEnd);
-        List<TemplateNode> bodyNodes = parse(body);
+        String fullBody = s.substring(bodyStart, bodyEnd);
+        int elseIdx = findTopLevelElse(fullBody);
 
-        nodes.add(new TemplateNode.ForNode(item, collection, bodyNodes));
+        List<TemplateNode> bodyNodes;
+        List<TemplateNode> elseNodes;
+
+        if (elseIdx != -1) {
+            bodyNodes = parse(fullBody.substring(0, elseIdx));
+            elseNodes = parse(fullBody.substring(elseIdx + 5));
+        } else {
+            bodyNodes = parse(fullBody);
+            elseNodes = Collections.emptyList();
+        }
+
+        nodes.add(new TemplateNode.ForNode(item, collection, bodyNodes, elseNodes));
+        return bodyEnd + 4;
+    }
+
+    private static int findTopLevelElse(String body) {
+        int len = body.length();
+        int depth = 0;
+        int i = 0;
+        while (i < len) {
+            if (body.startsWith("@if", i) || body.startsWith("@for", i) || body.startsWith("@switch", i) || body.startsWith("@try", i)) {
+                depth++;
+                i++;
+            } else if (body.startsWith("@end", i)) {
+                if (depth > 0) depth--;
+                i += 4;
+            } else if (depth == 0 && body.startsWith("@else", i) && isWordBoundary(body, i + 5)) {
+                return i;
+            } else {
+                i++;
+            }
+        }
+        return -1;
+    }
+
+    private static int parseTryDirective(String s, int pos, int limit, List<TemplateNode> nodes) {
+        int bodyStart = pos + 4;
+        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+
+        int bodyEnd = findMatchingEnd(s, bodyStart, limit);
+        String fullBody = s.substring(bodyStart, bodyEnd);
+
+        int catchIdx = -1;
+        int finallyIdx = -1;
+        int depth = 0;
+        int i = 0;
+        int len = fullBody.length();
+
+        while (i < len) {
+            if (fullBody.startsWith("@if", i) || fullBody.startsWith("@for", i) || fullBody.startsWith("@switch", i) || fullBody.startsWith("@try", i)) {
+                depth++;
+                i++;
+            } else if (fullBody.startsWith("@end", i)) {
+                if (depth > 0) depth--;
+                i += 4;
+            } else if (depth == 0) {
+                if (catchIdx == -1 && fullBody.startsWith("@catch", i) && isWordBoundary(fullBody, i + 6)) {
+                    catchIdx = i;
+                    i += 6;
+                } else if (finallyIdx == -1 && fullBody.startsWith("@finally", i) && isWordBoundary(fullBody, i + 8)) {
+                    finallyIdx = i;
+                    i += 8;
+                } else {
+                    i++;
+                }
+            } else {
+                i++;
+            }
+        }
+
+        String tryStr = "";
+        String catchVar = "err";
+        String catchStr = "";
+        String finallyStr = "";
+
+        if (catchIdx != -1 && finallyIdx != -1) {
+            tryStr = fullBody.substring(0, catchIdx);
+            catchStr = fullBody.substring(catchIdx, finallyIdx);
+            finallyStr = fullBody.substring(finallyIdx + 8);
+        } else if (catchIdx != -1) {
+            tryStr = fullBody.substring(0, catchIdx);
+            catchStr = fullBody.substring(catchIdx);
+        } else if (finallyIdx != -1) {
+            tryStr = fullBody.substring(0, finallyIdx);
+            finallyStr = fullBody.substring(finallyIdx + 8);
+        } else {
+            tryStr = fullBody;
+        }
+
+        if (catchIdx != -1) {
+            int openParen = catchStr.indexOf('(');
+            int closeParen = findMatchingParen(catchStr, openParen);
+            if (openParen != -1 && closeParen != -1) {
+                catchVar = catchStr.substring(openParen + 1, closeParen).trim();
+                catchStr = catchStr.substring(closeParen + 1);
+            } else {
+                catchStr = catchStr.substring(6);
+            }
+            if (catchStr.startsWith(":")) catchStr = catchStr.substring(1);
+        }
+        if (finallyStr.startsWith(":")) finallyStr = finallyStr.substring(1);
+
+        List<TemplateNode> tryNodes = parse(tryStr);
+        List<TemplateNode> catchNodes = catchIdx != -1 ? parse(catchStr) : Collections.emptyList();
+        List<TemplateNode> finallyNodes = finallyIdx != -1 ? parse(finallyStr) : Collections.emptyList();
+
+        nodes.add(new TemplateNode.TryNode(tryNodes, catchVar, catchNodes, finallyNodes));
         return bodyEnd + 4;
     }
 
@@ -225,7 +408,6 @@ public final class TemplateParser {
         Map<String, List<TemplateNode>> cases = new LinkedHashMap<>();
         List<TemplateNode> defaultBranch = Collections.emptyList();
 
-        // Parse cases inside switch body
         int len = body.length();
         int i = 0;
         String currentCaseVal = null;
@@ -296,6 +478,9 @@ public final class TemplateParser {
             } else if (s.startsWith("@switch", i) && isWordBoundary(s, i + 7)) {
                 depth++;
                 i += 7;
+            } else if (s.startsWith("@try", i) && isWordBoundary(s, i + 4)) {
+                depth++;
+                i += 4;
             } else if (s.startsWith("@end", i) && isWordBoundary(s, i + 4)) {
                 depth--;
                 if (depth == 0) {

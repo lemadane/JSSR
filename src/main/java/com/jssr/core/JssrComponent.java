@@ -867,11 +867,11 @@ public interface JssrComponent {
         }
     }
 
-    private static PropertyResult resolveProperty(Object obj, String propertyPath) {
+    public static PropertyResult resolveProperty(Object obj, String propertyPath) {
         return resolveProperty(obj, Collections.emptyMap(), propertyPath);
     }
 
-    private static PropertyResult resolveProperty(Object obj, Map<String, Object> localScope, String propertyPath) {
+    public static PropertyResult resolveProperty(Object obj, Map<String, Object> localScope, String propertyPath) {
         if (propertyPath == null || propertyPath.isBlank()) {
             return new PropertyResult(null, Object.class, false);
         }
@@ -1736,7 +1736,7 @@ public interface JssrComponent {
 
 
     @SuppressWarnings("unchecked")
-    private static List<?> toList(Object obj) {
+    public static List<?> toList(Object obj) {
         if (obj instanceof Optional<?> opt) {
             obj = opt.orElse(null);
         }
@@ -1781,9 +1781,9 @@ public interface JssrComponent {
         return -1;
     }
 
-    record ConditionResult(boolean matches, Map<String, Object> bindings) {}
+    public record ConditionResult(boolean matches, Map<String, Object> bindings) {}
 
-    static ConditionResult evaluateConditionWithBinding(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
+    public static ConditionResult evaluateConditionWithBinding(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
         if (conditionExpr == null || conditionExpr.isBlank()) {
             return new ConditionResult(false, Collections.emptyMap());
         }
@@ -1839,11 +1839,11 @@ public interface JssrComponent {
     /**
      * Evaluate condition expression (e.g. "user.isAdmin", "!disabled", "role == 'ADMIN'", "count > 0").
      */
-    static boolean evaluateCondition(JssrComponent component, String conditionExpr) {
+    public static boolean evaluateCondition(JssrComponent component, String conditionExpr) {
         return evaluateCondition(component, Collections.emptyMap(), conditionExpr);
     }
 
-    static boolean evaluateCondition(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
+    public static boolean evaluateCondition(JssrComponent component, Map<String, Object> localScope, String conditionExpr) {
         if (conditionExpr == null || conditionExpr.isBlank()) {
             return false;
         }
@@ -1960,7 +1960,7 @@ public interface JssrComponent {
         }
     }
 
-    private static boolean isTruthy(Object val) {
+    public static boolean isTruthy(Object val) {
         if (val == null) return false;
         if (val instanceof Boolean b) return b;
         if (val instanceof BooleanAttribute ba) return ba.present();
@@ -1972,7 +1972,31 @@ public interface JssrComponent {
         return true;
     }
 
-    record PropertyResult(Object value, Class<?> type, boolean found) {}
+    public static String renderInterpolatedExpression(JssrComponent component, Map<String, Object> localScope, String expr) {
+        if (expr == null || expr.isBlank()) return "";
+        PropertyResult res = resolveProperty(component, localScope, expr);
+        if (!res.found()) {
+            throw new IllegalArgumentException("Unknown JSSR interpolation property '${" + expr + "}' in component " 
+                    + (component != null ? component.getClass().getSimpleName() : "null"));
+        }
+        Object val = res.value();
+        if (val == null) return "";
+        if (val instanceof RawHtml raw) return raw.value() == null ? "" : raw.value();
+        if (val instanceof SafeUrl safe) return escapeHtml(safe.render());
+        if (val instanceof SafeSrcSet safeSet) return escapeHtml(safeSet.render());
+        if (val instanceof SafeUrlList safeList) return escapeHtml(safeList.render());
+        if (val instanceof JssrComponent jc) return jc.render();
+        if (val instanceof Optional<?> opt) return opt.map(o -> escapeHtml(o.toString())).orElse("");
+        return escapeHtml(val.toString());
+    }
+
+    public static String renderCustomTag(JssrComponent component, Map<String, Object> localScope, String tagName, Map<String, String> attributes) {
+        if (!REGISTRY.containsKey(tagName)) return "";
+        Class<? extends JssrComponent> clazz = REGISTRY.get(tagName);
+        return instantiateAndRender(clazz, attributes != null ? attributes : Collections.emptyMap(), false);
+    }
+
+    public record PropertyResult(Object value, Class<?> type, boolean found) {}
 
     class ComponentMetadata {
         final boolean isRecord;

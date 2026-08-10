@@ -38,8 +38,29 @@ jobs:
       - name: Verify Spring Boot 4.0.0 Test Suite
         run: ./gradlew test -PspringBootVersion=4.0.0 -Pversion=${TAG_VERSION} --info
 
-      - name: Build & Publish Artifacts
-        run: ./gradlew jar sourcesJar javadocJar publishToMavenLocal -Pversion=${TAG_VERSION}
+      - name: Run JMH Release Benchmark Suite
+        run: ./gradlew jmh --no-configuration-cache -Pversion=${TAG_VERSION} --info
+
+      - name: Build & Publish Artifacts to Maven Central & Local
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$MAVEN_CENTRAL_USERNAME" ] && [ -n "$MAVEN_CENTRAL_PASSWORD" ]; then
+            echo "Publishing GPG-signed artifacts to Maven Central Sonatype OSSRH..."
+            ./gradlew publishMavenJavaPublicationToMavenCentralRepository -Pversion=${TAG_VERSION}
+          else
+            echo "Maven Central secrets missing; falling back to publishToMavenLocal verification..."
+            ./gradlew jar sourcesJar javadocJar publishToMavenLocal -Pversion=${TAG_VERSION}
+          fi
+
+      - name: Upload JMH Benchmark Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-release-benchmark-report
+          path: build/reports/jmh/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -49,6 +70,8 @@ jobs:
             build/libs/jssr-${{ env.TAG_VERSION }}.jar
             build/libs/jssr-${{ env.TAG_VERSION }}-sources.jar
             build/libs/jssr-${{ env.TAG_VERSION }}-javadoc.jar
+            build/reports/jmh/results.txt
+            build/reports/jmh/results.json
           generate_release_notes: true
           draft: false
           prerelease: false

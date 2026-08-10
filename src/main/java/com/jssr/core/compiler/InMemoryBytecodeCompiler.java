@@ -2,13 +2,20 @@ package com.jssr.core.compiler;
 
 import javax.tools.*;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.net.URL;
 import java.util.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 /**
  * Dynamic in-memory bytecode compiler using JDK's javax.tools.JavaCompiler.
  * Modeled after PTE's (Piped Template Engine) in-memory bytecode compilation architecture.
+ * Supports Spring Boot executable fat JAR environments (BOOT-INF/classes, BOOT-INF/lib).
  */
 public final class InMemoryBytecodeCompiler {
 
@@ -55,9 +62,9 @@ public final class InMemoryBytecodeCompiler {
             ClassLoader cl = getClass().getClassLoader();
             while (cl != null) {
                 if (cl instanceof java.net.URLClassLoader ucl) {
-                    for (java.net.URL url : ucl.getURLs()) {
+                    for (URL url : ucl.getURLs()) {
                         try {
-                            cpElements.add(new java.io.File(url.toURI()).getAbsolutePath());
+                            cpElements.add(new File(url.toURI()).getAbsolutePath());
                         } catch (Exception ignored) {}
                     }
                 }
@@ -67,9 +74,9 @@ public final class InMemoryBytecodeCompiler {
             ClassLoader tcl = Thread.currentThread().getContextClassLoader();
             while (tcl != null) {
                 if (tcl instanceof java.net.URLClassLoader ucl) {
-                    for (java.net.URL url : ucl.getURLs()) {
+                    for (URL url : ucl.getURLs()) {
                         try {
-                            cpElements.add(new java.io.File(url.toURI()).getAbsolutePath());
+                            cpElements.add(new File(url.toURI()).getAbsolutePath());
                         } catch (Exception ignored) {}
                     }
                 }
@@ -78,19 +85,19 @@ public final class InMemoryBytecodeCompiler {
         } catch (Exception ignored) {}
 
         try {
-            java.io.File buildClasses = new java.io.File("build/classes/java/main");
+            File buildClasses = new File("build/classes/java/main");
             if (buildClasses.exists()) {
                 cpElements.add(buildClasses.getAbsolutePath());
             }
         } catch (Exception ignored) {}
 
-        List<java.io.File> cpFiles = new ArrayList<>();
+        List<File> cpFiles = new ArrayList<>();
         Set<String> added = new HashSet<>();
         for (String path : cpElements) {
             if (path != null && !path.isBlank()) {
-                for (String singlePath : path.split(java.io.File.pathSeparator)) {
+                for (String singlePath : path.split(File.pathSeparator)) {
                     if (!singlePath.isBlank() && added.add(singlePath)) {
-                        java.io.File f = new java.io.File(singlePath);
+                        File f = new File(singlePath);
                         if (f.exists()) {
                             cpFiles.add(f);
                         }
@@ -100,8 +107,8 @@ public final class InMemoryBytecodeCompiler {
         }
 
         String fullCp = cpFiles.stream()
-                .map(java.io.File::getAbsolutePath)
-                .reduce((a, b) -> a + java.io.File.pathSeparator + b)
+                .map(File::getAbsolutePath)
+                .reduce((a, b) -> a + File.pathSeparator + b)
                 .orElse("");
         List<String> options = List.of("-classpath", fullCp);
 
@@ -184,10 +191,10 @@ public final class InMemoryBytecodeCompiler {
         try {
             var codeSource = clazz.getProtectionDomain().getCodeSource();
             if (codeSource != null && codeSource.getLocation() != null) {
-                java.net.URL location = codeSource.getLocation();
+                URL location = codeSource.getLocation();
                 String protocol = location.getProtocol();
                 if ("file".equalsIgnoreCase(protocol)) {
-                    cpElements.add(new java.io.File(location.toURI()).getAbsolutePath());
+                    cpElements.add(new File(location.toURI()).getAbsolutePath());
                 } else if ("jar".equalsIgnoreCase(protocol) || "nested".equalsIgnoreCase(protocol)) {
                     String urlStr = location.toExternalForm();
                     addJarOrNestedPath(urlStr, cpElements);
@@ -197,7 +204,7 @@ public final class InMemoryBytecodeCompiler {
 
         try {
             String classResourceName = clazz.getSimpleName() + ".class";
-            java.net.URL url = clazz.getResource(classResourceName);
+            URL url = clazz.getResource(classResourceName);
             if (url != null) {
                 addJarOrNestedPath(url.toExternalForm(), cpElements);
             }
@@ -207,34 +214,73 @@ public final class InMemoryBytecodeCompiler {
     private static void addJarOrNestedPath(String urlStr, List<String> cpElements) {
         if (urlStr == null || urlStr.isBlank()) return;
         try {
+            File fatJar = null;
             if (urlStr.startsWith("jar:file:")) {
                 int bang = urlStr.indexOf("!");
                 if (bang != -1) {
                     String fileUriStr = urlStr.substring(4, bang);
-                    java.io.File file = new java.io.File(new java.net.URI(fileUriStr));
-                    if (file.exists()) {
-                        cpElements.add(file.getAbsolutePath());
-                    }
+                    fatJar = new File(new URI(fileUriStr));
                 }
             } else if (urlStr.contains("nested:")) {
                 int nestedIdx = urlStr.indexOf("nested:");
                 String nestedSub = urlStr.substring(nestedIdx + 7);
                 int bang = nestedSub.indexOf("/!");
                 if (bang != -1) {
-                    String outerPath = nestedSub.substring(0, bang);
-                    java.io.File file = new java.io.File(outerPath);
-                    if (file.exists()) {
-                        cpElements.add(file.getAbsolutePath());
-                    }
+                    fatJar = new File(nestedSub.substring(0, bang));
                 }
             } else if (urlStr.startsWith("file:")) {
                 int bang = urlStr.indexOf("!");
                 String fileUriStr = (bang != -1) ? urlStr.substring(0, bang) : urlStr;
-                java.io.File file = new java.io.File(new java.net.URI(fileUriStr));
-                if (file.exists()) {
-                    cpElements.add(file.getAbsolutePath());
-                }
+                fatJar = new File(new URI(fileUriStr));
+            }
+
+            if (fatJar != null && fatJar.exists()) {
+                cpElements.add(fatJar.getAbsolutePath());
+                extractSpringBootFatJarIfNeeded(fatJar, cpElements);
             }
         } catch (Exception ignored) {}
+    }
+
+    private static final Set<String> EXTRACTED_JARS = Collections.synchronizedSet(new HashSet<>());
+
+    private static void extractSpringBootFatJarIfNeeded(File fatJar, List<String> cpElements) {
+        if (fatJar == null || !fatJar.exists() || !fatJar.getName().endsWith(".jar")) return;
+
+        String key = fatJar.getAbsolutePath() + "_" + fatJar.lastModified();
+        File extractDir = new File(System.getProperty("java.io.tmpdir"), "jssr-boot-cp-" + Math.abs(key.hashCode()));
+
+        if (EXTRACTED_JARS.add(key) || !extractDir.exists()) {
+            extractDir.mkdirs();
+            try (JarFile jarFile = new JarFile(fatJar)) {
+                Enumeration<JarEntry> entries = jarFile.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if ((name.startsWith("BOOT-INF/classes/") || name.startsWith("BOOT-INF/lib/")) && !entry.isDirectory()) {
+                        File target = new File(extractDir, name);
+                        target.getParentFile().mkdirs();
+                        try (InputStream is = jarFile.getInputStream(entry);
+                             FileOutputStream fos = new FileOutputStream(target)) {
+                            is.transferTo(fos);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        File bootClasses = new File(extractDir, "BOOT-INF/classes");
+        if (bootClasses.exists()) {
+            cpElements.add(bootClasses.getAbsolutePath());
+        }
+
+        File bootLib = new File(extractDir, "BOOT-INF/lib");
+        if (bootLib.exists() && bootLib.isDirectory()) {
+            File[] jars = bootLib.listFiles((dir, name) -> name.endsWith(".jar"));
+            if (jars != null) {
+                for (File j : jars) {
+                    cpElements.add(j.getAbsolutePath());
+                }
+            }
+        }
     }
 }

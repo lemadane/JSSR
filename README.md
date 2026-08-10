@@ -33,7 +33,7 @@ Traditional Java web development forces developers into a hard choice between tr
 | **Type Safety** | None (Untyped Strings) | TypeScript (Duplicate DTOs) | **Strongly Typed Records + Prop Validation** |
 | **Build Toolchain** | Maven / Gradle | Node.js + npm + Webpack + Maven | **Gradle / Maven Only** |
 | **HTMX / Fragment SSR** | Clunky fragments | Not Supported (JSON APIs) | **Native Component Swapping** |
-| **Performance** | Template Parsing Overhead | Client-side JS Bundle Overhead | **Precompiled JVM Bytecode (~83.8k ops/sec)** |
+| **Performance** | Template Parsing Overhead | Client-side JS Bundle Overhead | **Precompiled JVM Bytecode AST (~4.3M ops/sec)** |
 
 ---
 
@@ -272,7 +272,7 @@ String precompiledHtml = card.renderPrecompiled();
 
 ### Key Performance & Security Guarantees
 - **In-Memory Compilation**: Zero temporary `.class` files written to disk during application runtime.
-- **Microsecond Throughput**: Achieves **~83,800 ops/sec** (100,000 renders in ~1.19s).
+- **Microsecond Throughput**: Achieves **~4.3 Million ops/sec** (4,302,200 renders/sec on simple components, 2,625,700 renders/sec on control flow).
 - **100% Security Parity**: Precompiled JVM bytecode enforces identical HTML entity escaping, `RawHtml` trusted markup, `SafeUrl` scheme sanitization, `SafeSrcSet` candidate parsing, and attribute XSS rules.
 - **Graceful Fallback**: Automatically falls back to standard interpreted execution if running in a minimal JRE environment without `javax.tools.JavaCompiler`.
 

@@ -32,4 +32,32 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build & Run Test Suite
-        run: ./gradlew test -PspringBootVersion=${{ matrix.springboot-version }} --info
+        run: ./gradlew test -PtestJavaVersion=${{ matrix.java-version }} -PspringBootVersion=${{ matrix.springboot-version }} --info
+
+  benchmark:
+    name: JMH Performance Benchmark
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Execute JMH Benchmark Suite
+        run: ./gradlew jmh --no-configuration-cache --info
+
+      - name: Upload JMH Benchmark Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmh-benchmark-report
+          path: build/reports/jmh/

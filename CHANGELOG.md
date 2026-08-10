@@ -4,6 +4,23 @@ All notable changes to the **JSSR (Java Server-Side Rendering)** project will be
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-11
+
+### Complete AST Code Generation, Spring Boot Fat JAR E2E & Maven Central Release
+
+#### Added
+- **Direct AST → Java Rendering Code Generator (`com.jssr.core.compiler.JavaCodeGenerator`)**: Replaced all runtime interpreter delegations (`processControlFlow`, `interpolateVariables`, `processCustomTags`) in precompiled templates with native Java rendering statements (`sb.append(...)`, typed record accessors, native `if`, `for`, `switch`, `try-catch`, `continue`, `break`).
+- **Process-Isolated Executable-JAR Integration Subproject (`integration-tests/boot-jar`)**: Built dedicated Spring Boot fat JAR test application and `RealBootJarIntegrationTest.java` that spawns `java -jar` as a separate OS process, issues HTTP GET requests, and asserts `CompilationStatus.COMPILED` under Spring Boot's `LaunchedURLClassLoader`.
+- **Spring Boot Fat JAR Nested ClassPath Extraction (`InMemoryBytecodeCompiler.java`)**: Added automatic temporary extraction (`jssr-boot-cp-<hash>`) of nested archive entries (`BOOT-INF/classes` and `BOOT-INF/lib/*.jar`) to enable JDK `javax.tools.JavaCompiler` resolution inside packaged fat JARs.
+- **Dedicated JMH CI & Release Benchmark Pipeline (`.github/workflows/ci.yml`, `.github/workflows/release.yml`)**: Added dedicated `benchmark` job to CI running `./gradlew jmh --no-configuration-cache` with artifact uploads and GitHub Release attachments (`results.txt`, `results.json`).
+- **Maven Central GPG Key Signing & Publishing (`build.gradle`, `.github/workflows/release.yml`)**: Applied Gradle `signing` plugin with `useInMemoryPgpKeys` and Sonatype OSSRH Maven Central staging repository deployment.
+
+#### Fixed
+- **CI Runtime Java Matrix Parameterization (`build.gradle`, `.github/workflows/ci.yml`)**: Parameterized test runner launcher via `-PtestJavaVersion` so CI jobs actually execute tests on JDK 17, 21, and 25 runtimes.
+- **Precompiled Attribute Security Parity**: Enforced `SafeUrl` attribute sanitization rules inside dynamic HTML URL attributes (`href`, `src`, `action`, `formaction`, etc.) at AST generation time.
+
+---
+
 ## [1.2.1] - 2026-08-10
 
 ### Production Readiness & AST Precompiler Architecture Release
