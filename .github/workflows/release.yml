@@ -48,13 +48,12 @@ jobs:
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
         run: |
-          if [ -n "$MAVEN_CENTRAL_USERNAME" ] && [ -n "$MAVEN_CENTRAL_PASSWORD" ]; then
-            echo "Publishing GPG-signed artifacts to Maven Central Sonatype OSSRH..."
-            ./gradlew publishMavenJavaPublicationToMavenCentralRepository -Pversion=${TAG_VERSION}
-          else
-            echo "Maven Central secrets missing; falling back to publishToMavenLocal verification..."
-            ./gradlew jar sourcesJar javadocJar publishToMavenLocal -Pversion=${TAG_VERSION}
+          if [ -z "$MAVEN_CENTRAL_USERNAME" ] || [ -z "$MAVEN_CENTRAL_PASSWORD" ] || [ -z "$GPG_SIGNING_KEY" ] || [ -z "$GPG_SIGNING_PASSWORD" ]; then
+            echo "::error::Required Maven Central credentials or GPG secrets are missing. Release publication aborted."
+            exit 1
           fi
+          echo "Publishing GPG-signed artifacts to Maven Central Sonatype OSSRH..."
+          ./gradlew publishMavenJavaPublicationToMavenCentralRepository -Pversion=${TAG_VERSION}
 
       - name: Upload JMH Benchmark Reports
         uses: actions/upload-artifact@v4
