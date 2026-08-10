@@ -4,11 +4,21 @@ import java.util.*;
 
 /**
  * Parser for JSSR template strings into an Abstract Syntax Tree (AST) representation.
- * Enforces HTML context tracking and loop boundary validations.
+ * Uses an explicit HTML state machine for precise attribute, tag, and script/style/comment tracking.
  */
 public final class TemplateParser {
 
     private TemplateParser() {}
+
+    private enum HtmlState {
+        TEXT,
+        TAG_NAME,
+        BETWEEN_ATTRIBUTES,
+        ATTRIBUTE_NAME,
+        BEFORE_ATTRIBUTE_VALUE,
+        QUOTED_ATTRIBUTE_VALUE,
+        UNQUOTED_ATTRIBUTE_VALUE
+    }
 
     /**
      * Parse a raw template HTML string into a list of AST TemplateNodes.
@@ -27,12 +37,11 @@ public final class TemplateParser {
         List<TemplateNode> nodes = new ArrayList<>();
         int i = start;
 
-        boolean inTag = false;
+        HtmlState state = HtmlState.TEXT;
         char quoteChar = 0;
         String currentAttr = "";
         String pendingAttr = "";
-        boolean seenEquals = false;
-        StringBuilder attrBuf = new StringBuilder();
+        StringBuilder buf = new StringBuilder();
 
         boolean inScript = false;
         boolean inStyle = false;
@@ -57,7 +66,7 @@ public final class TemplateParser {
                 break;
             }
 
-            // Update HTML attribute and script/style/comment context state up to next token
+            // Update HTML state machine up to next token position
             for (int k = i; k < next; k++) {
                 if (k + 4 <= end && s.startsWith("<!--", k)) {
                     inComment = true;
@@ -68,11 +77,11 @@ public final class TemplateParser {
                 if (!inComment) {
                     char c = s.charAt(k);
                     if (c == '<') {
-                        inTag = true;
+                        state = HtmlState.TAG_NAME;
+                        quoteChar = 0;
                         currentAttr = "";
                         pendingAttr = "";
-                        seenEquals = false;
-                        attrBuf.setLength(0);
+                        buf.setLength(0);
 
                         String lowerRemainder = s.substring(k).toLowerCase(Locale.ROOT);
                         if (lowerRemainder.startsWith("<script")) {
@@ -84,47 +93,75 @@ public final class TemplateParser {
                         } else if (lowerRemainder.startsWith("</style>")) {
                             inStyle = false;
                         }
-                    } else if (inTag) {
-                        if (quoteChar != 0) {
-                            if (c == quoteChar) {
-                                quoteChar = 0;
-                                currentAttr = "";
-                                pendingAttr = "";
-                                seenEquals = false;
-                                attrBuf.setLength(0);
+                    } else if (state != HtmlState.TEXT) {
+                        switch (state) {
+                            case TAG_NAME -> {
+                                if (Character.isWhitespace(c) || c == '>' || c == '/') {
+                                    state = (c == '>') ? HtmlState.TEXT : HtmlState.BETWEEN_ATTRIBUTES;
+                                    buf.setLength(0);
+                                    currentAttr = "";
+                                    pendingAttr = "";
+                                } else {
+                                    buf.append(c);
+                                }
                             }
-                        } else {
-                            if (c == '"' || c == '\'') {
-                                quoteChar = c;
-                                if (seenEquals && !pendingAttr.isEmpty()) {
+                            case BETWEEN_ATTRIBUTES -> {
+                                if (c == '>') {
+                                    state = HtmlState.TEXT;
+                                    buf.setLength(0);
+                                    currentAttr = "";
+                                    pendingAttr = "";
+                                } else if (!Character.isWhitespace(c) && c != '/') {
+                                    state = HtmlState.ATTRIBUTE_NAME;
+                                    buf.setLength(0);
+                                    buf.append(c);
+                                }
+                            }
+                            case ATTRIBUTE_NAME -> {
+                                if (c == '=') {
+                                    pendingAttr = buf.toString().trim();
+                                    buf.setLength(0);
+                                    state = HtmlState.BEFORE_ATTRIBUTE_VALUE;
+                                } else if (Character.isWhitespace(c) || c == '>' || c == '/') {
+                                    pendingAttr = buf.toString().trim();
+                                    buf.setLength(0);
+                                    state = (c == '>') ? HtmlState.TEXT : HtmlState.BETWEEN_ATTRIBUTES;
+                                } else {
+                                    buf.append(c);
+                                }
+                            }
+                            case BEFORE_ATTRIBUTE_VALUE -> {
+                                if (c == '"' || c == '\'') {
+                                    quoteChar = c;
                                     currentAttr = pendingAttr;
-                                } else if (!attrBuf.toString().isBlank()) {
-                                    currentAttr = attrBuf.toString().trim();
+                                    state = HtmlState.QUOTED_ATTRIBUTE_VALUE;
+                                    buf.setLength(0);
+                                } else if (!Character.isWhitespace(c)) {
+                                    quoteChar = 0;
+                                    currentAttr = pendingAttr;
+                                    state = HtmlState.UNQUOTED_ATTRIBUTE_VALUE;
+                                    buf.setLength(0);
                                 }
-                                attrBuf.setLength(0);
-                            } else if (c == '=') {
-                                if (!seenEquals) {
-                                    if (!attrBuf.toString().isBlank()) {
-                                        pendingAttr = attrBuf.toString().trim();
-                                        attrBuf.setLength(0);
-                                    }
-                                    seenEquals = true;
-                                }
-                            } else if (c == '>') {
-                                inTag = false;
-                                quoteChar = 0;
-                                currentAttr = "";
-                                pendingAttr = "";
-                                seenEquals = false;
-                                attrBuf.setLength(0);
-                            } else if (Character.isWhitespace(c)) {
-                                if (!seenEquals && !attrBuf.toString().isBlank()) {
-                                    pendingAttr = attrBuf.toString().trim();
-                                    attrBuf.setLength(0);
-                                }
-                            } else {
-                                attrBuf.append(c);
                             }
+                            case QUOTED_ATTRIBUTE_VALUE -> {
+                                if (c == quoteChar) {
+                                    quoteChar = 0;
+                                    currentAttr = "";
+                                    pendingAttr = "";
+                                    state = HtmlState.BETWEEN_ATTRIBUTES;
+                                    buf.setLength(0);
+                                }
+                            }
+                            case UNQUOTED_ATTRIBUTE_VALUE -> {
+                                if (Character.isWhitespace(c) || c == '>') {
+                                    quoteChar = 0;
+                                    currentAttr = "";
+                                    pendingAttr = "";
+                                    state = (c == '>') ? HtmlState.TEXT : HtmlState.BETWEEN_ATTRIBUTES;
+                                    buf.setLength(0);
+                                }
+                            }
+                            default -> {}
                         }
                     }
                 }
@@ -137,15 +174,23 @@ public final class TemplateParser {
             }
 
             if (s.startsWith("${", i)) {
+                if (state == HtmlState.TAG_NAME) {
+                    state = HtmlState.TEXT;
+                }
                 int closing = s.indexOf('}', i + 2);
                 if (closing != -1 && closing < end) {
                     String expr = s.substring(i + 2, closing).trim();
-                    String activeAttr = null;
-                    if (inTag && (quoteChar != 0 || seenEquals || !currentAttr.isEmpty() || !pendingAttr.isEmpty())) {
-                        activeAttr = currentAttr.isEmpty() ? pendingAttr : currentAttr;
+                    boolean inTag = (state != HtmlState.TEXT);
+                    String activeAttr = "";
+                    if (state == HtmlState.QUOTED_ATTRIBUTE_VALUE || state == HtmlState.UNQUOTED_ATTRIBUTE_VALUE) {
+                        activeAttr = currentAttr;
+                    } else if (state == HtmlState.BEFORE_ATTRIBUTE_VALUE) {
+                        activeAttr = pendingAttr;
                     }
+                    char activeQuote = (state == HtmlState.QUOTED_ATTRIBUTE_VALUE) ? quoteChar : 0;
+
                     nodes.add(new TemplateNode.InterpolationNode(
-                            expr, activeAttr, inTag, quoteChar, inScript, inStyle, inComment
+                            expr, activeAttr, inTag, activeQuote, inScript, inStyle, inComment
                     ));
                     i = closing + 1;
                 } else {
@@ -203,6 +248,8 @@ public final class TemplateParser {
 
         String mainCond = s.substring(openParen + 1, closeParen).trim();
         int bodyStart = closeParen + 1;
+        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+
         int bodyEnd = findMatchingEnd(s, bodyStart, limit);
 
         String fullBody = s.substring(bodyStart, bodyEnd);
@@ -240,6 +287,7 @@ public final class TemplateParser {
                     int closeParen = findMatchingParen(body, openParen);
                     currentCond = body.substring(openParen + 1, closeParen).trim();
                     currentBodyStart = closeParen + 1;
+                    if (currentBodyStart < len && body.charAt(currentBodyStart) == ':') currentBodyStart++;
                     i = currentBodyStart;
                 } else if (body.startsWith("@else", i) && isWordBoundary(body, i + 5)) {
                     String subBody = body.substring(currentBodyStart, i);
@@ -247,6 +295,7 @@ public final class TemplateParser {
 
                     currentCond = null;
                     currentBodyStart = i + 5;
+                    if (currentBodyStart < len && body.charAt(currentBodyStart) == ':') currentBodyStart++;
                     i = currentBodyStart;
                 } else {
                     i++;
@@ -309,6 +358,8 @@ public final class TemplateParser {
         }
 
         int bodyStart = closeParen + 1;
+        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+
         int bodyEnd = findMatchingEnd(s, bodyStart, limit);
 
         String fullBody = s.substring(bodyStart, bodyEnd);
@@ -318,8 +369,10 @@ public final class TemplateParser {
         List<TemplateNode> elseNodes;
 
         if (elseIdx != -1) {
+            int elseBodyStart = elseIdx + 5;
+            if (elseBodyStart < fullBody.length() && fullBody.charAt(elseBodyStart) == ':') elseBodyStart++;
             bodyNodes = parseBlock(fullBody.substring(0, elseIdx), 0, elseIdx, loopDepth + 1);
-            elseNodes = parseBlock(fullBody.substring(elseIdx + 5), 0, fullBody.length() - (elseIdx + 5), loopDepth);
+            elseNodes = parseBlock(fullBody.substring(elseBodyStart), 0, fullBody.length() - elseBodyStart, loopDepth);
         } else {
             bodyNodes = parseBlock(fullBody, 0, fullBody.length(), loopDepth + 1);
             elseNodes = Collections.emptyList();
@@ -434,6 +487,8 @@ public final class TemplateParser {
 
         String expr = s.substring(openParen + 1, closeParen).trim();
         int bodyStart = closeParen + 1;
+        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+
         int bodyEnd = findMatchingEnd(s, bodyStart, limit);
 
         String body = s.substring(bodyStart, bodyEnd);
@@ -459,6 +514,7 @@ public final class TemplateParser {
                 int cClose = findMatchingParen(body, cOpen);
                 currentCaseVal = body.substring(cOpen + 1, cClose).trim();
                 caseBodyStart = cClose + 1;
+                if (caseBodyStart < len && body.charAt(caseBodyStart) == ':') caseBodyStart++;
                 i = caseBodyStart;
             } else if (body.startsWith("@default", i) && isWordBoundary(body, i + 8)) {
                 if (currentCaseVal != null) {
@@ -467,6 +523,7 @@ public final class TemplateParser {
                 }
                 isDefault = true;
                 caseBodyStart = i + 8;
+                if (caseBodyStart < len && body.charAt(caseBodyStart) == ':') caseBodyStart++;
                 i = caseBodyStart;
             } else {
                 i++;

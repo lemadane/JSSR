@@ -1,21 +1,27 @@
 package com.jssr.e2e.app.components;
 
 import com.jssr.core.JssrComponent;
+import com.jssr.core.RawHtml;
 
-public record PageLayout(String title, String contentHtml) implements JssrComponent {
+public record PageLayout(String title, RawHtml contentHtml, RawHtml formModalHtml) implements JssrComponent {
+
+    public PageLayout(String title, String contentHtml) {
+        this(title, RawHtml.of(contentHtml), RawHtml.of(new UserForm().render()));
+    }
+
+    public PageLayout(String title, RawHtml contentHtml) {
+        this(title, contentHtml, RawHtml.of(new UserForm().render()));
+    }
 
     @Override
     public String template() {
-        UserForm form = new UserForm();
-        String formModalHtml = form.render();
-
         return """
             <!DOCTYPE html>
             <html lang="en" class="h-full bg-slate-950">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>%s - JSSR Library Demo</title>
+                <title>${title} - JSSR Library Demo</title>
                 
                 <!-- Tailwind CSS -->
                 <script src="https://cdn.tailwindcss.com"></script>
@@ -76,11 +82,11 @@ public record PageLayout(String title, String contentHtml) implements JssrCompon
 
                 <!-- Main Content Area -->
                 <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10">
-                    %s
+                    ${contentHtml}
                 </main>
 
                 <!-- Global User Form Modal -->
-                %s
+                ${formModalHtml}
 
                 <!-- Global Footer -->
                 <footer class="border-t border-slate-800/60 bg-slate-900/30 py-6 text-center text-xs text-slate-500">
@@ -88,6 +94,6 @@ public record PageLayout(String title, String contentHtml) implements JssrCompon
                 </footer>
             </body>
             </html>
-            """.formatted(title, contentHtml, formModalHtml);
+            """;
     }
 }

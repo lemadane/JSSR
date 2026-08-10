@@ -103,6 +103,13 @@ public class PrecompiledSecurityParityTest {
         }
     }
 
+    public record XlinkHrefCard(String url) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<svg><a xlink:href=\"${url}\">Link</a></svg>";
+        }
+    }
+
     public record StringSrcSetCard(String srcset) implements JssrComponent {
         @Override
         public String template() {
@@ -117,10 +124,73 @@ public class PrecompiledSecurityParityTest {
         }
     }
 
+    public record StringIconCard(String icon) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<link rel=\"icon\" icon=\"${icon}\">";
+        }
+    }
+
+    public record StringManifestCard(String manifest) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<link rel=\"manifest\" manifest=\"${manifest}\">";
+        }
+    }
+
+    public record StringImageSrcSetCard(String imagesrcset) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<link rel=\"preload\" imagesrcset=\"${imagesrcset}\">";
+        }
+    }
+
     public record InvalidBreakOutsideLoopCard(String name) implements JssrComponent {
         @Override
         public String template() {
             return "<div>Hello</div>@break";
+        }
+    }
+
+    public record FreestandingInvalidCard(String extra) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${extra} />";
+        }
+    }
+
+    public record FreestandingValidBoolCard(boolean disabled) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${disabled} />";
+        }
+    }
+
+    public record FreestandingBoolAttrCard(BooleanAttribute disabled) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${disabled} />";
+        }
+    }
+
+    public record FreestandingHtmlAttrCard(HtmlAttribute custom) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<input ${custom} />";
+        }
+    }
+
+    public record SrcSetEscapingCard(SafeSrcSet srcset) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<img srcset=\"${srcset}\">";
+        }
+    }
+
+    public record UrlListEscapingCard(SafeUrlList ping) implements JssrComponent {
+        @Override
+        public String template() {
+            return "<a ping=\"${ping}\">Track</a>";
         }
     }
 
@@ -213,6 +283,14 @@ public class PrecompiledSecurityParityTest {
     }
 
     @Test
+    @DisplayName("Verify precompiled and interpreted parity: xlink:href requires SafeUrl")
+    void testRejectsXlinkHrefString() {
+        XlinkHrefCard card = new XlinkHrefCard("https://example.com");
+        assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(XlinkHrefCard.class));
+    }
+
+    @Test
     @DisplayName("Verify precompiled and interpreted parity: String field in srcset attribute requires SafeSrcSet")
     void testRejectsStringInSrcSet() {
         StringSrcSetCard card = new StringSrcSetCard("img.jpg 1x");
@@ -226,6 +304,126 @@ public class PrecompiledSecurityParityTest {
         StringPingCard card = new StringPingCard("https://analytics.example.com");
         assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
         assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(StringPingCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: String field in icon attribute requires SafeUrl")
+    void testRejectsStringInIcon() {
+        StringIconCard card = new StringIconCard("https://example.com/favicon.ico");
+        assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
+        assertThrows(IllegalArgumentException.class, card::render);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(StringIconCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: String field in manifest attribute requires SafeUrl")
+    void testRejectsStringInManifest() {
+        StringManifestCard card = new StringManifestCard("https://example.com/manifest.json");
+        assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
+        assertThrows(IllegalArgumentException.class, card::render);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(StringManifestCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: String field in imagesrcset attribute requires SafeSrcSet")
+    void testRejectsStringInImageSrcSet() {
+        StringImageSrcSetCard card = new StringImageSrcSetCard("img.jpg 1x");
+        assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
+        assertThrows(IllegalArgumentException.class, card::render);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(StringImageSrcSetCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: SafeSrcSet output is HTML-escaped")
+    void testSafeSrcSetOutputEscapingParity() {
+        SafeSrcSet safeSet = SafeSrcSet.of("image.jpg\" onerror=\"alert(1) 1x");
+        SrcSetEscapingCard card = new SrcSetEscapingCard(safeSet);
+
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String interpreted = card.render();
+
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = card.renderPrecompiled();
+
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(SrcSetEscapingCard.class));
+        assertEquals(interpreted, compiled, "Precompiled output must match interpreted output for SafeSrcSet");
+        assertTrue(compiled.contains("&quot; onerror=&quot;"), "Precompiled output must HTML-escape attribute-breaking quotes in SafeSrcSet");
+        assertFalse(compiled.contains("image.jpg\" onerror="), "Precompiled output must not leave raw unescaped quotes in attribute");
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: SafeUrlList output is HTML-escaped")
+    void testSafeUrlListOutputEscapingParity() {
+        SafeUrlList safeList = SafeUrlList.of("https://example.com\" onerror=\"alert(1)");
+        UrlListEscapingCard card = new UrlListEscapingCard(safeList);
+
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String interpreted = card.render();
+
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = card.renderPrecompiled();
+
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(UrlListEscapingCard.class));
+        assertEquals(interpreted, compiled, "Precompiled output must match interpreted output for SafeUrlList");
+        assertTrue(compiled.contains("&quot; onerror=&quot;"), "Precompiled output must HTML-escape attribute-breaking quotes in SafeUrlList");
+        assertFalse(compiled.contains("example.com\" onerror="), "Precompiled output must not leave raw unescaped quotes in attribute");
+    }
+
+    @Test
+    @DisplayName("Verify precompiled and interpreted parity: String in free-standing attribute position is rejected")
+    void testRejectsFreestandingStringAttr() {
+        FreestandingInvalidCard card = new FreestandingInvalidCard("autofocus");
+        assertThrows(IllegalArgumentException.class, card::renderPrecompiled);
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(FreestandingInvalidCard.class));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled rendering supports boolean in free-standing attribute position with 100% parity")
+    void testValidFreestandingBooleanAttr() {
+        FreestandingValidBoolCard active = new FreestandingValidBoolCard(true);
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String activeInterpreted = active.render();
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String activeCompiled = active.renderPrecompiled();
+
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(FreestandingValidBoolCard.class));
+        assertEquals(activeInterpreted, activeCompiled);
+        assertTrue(activeCompiled.contains("disabled"));
+
+        FreestandingValidBoolCard inactive = new FreestandingValidBoolCard(false);
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String inactiveInterpreted = inactive.render();
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String inactiveCompiled = inactive.renderPrecompiled();
+
+        assertEquals(inactiveInterpreted, inactiveCompiled);
+        assertFalse(inactiveCompiled.contains("disabled"));
+    }
+
+    @Test
+    @DisplayName("Verify precompiled rendering supports BooleanAttribute in free-standing attribute position with parity")
+    void testValidFreestandingBooleanAttribute() {
+        FreestandingBoolAttrCard active = new FreestandingBoolAttrCard(BooleanAttribute.of("disabled", true));
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String interpreted = active.render();
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = active.renderPrecompiled();
+
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(FreestandingBoolAttrCard.class));
+        assertEquals(interpreted, compiled);
+    }
+
+    @Test
+    @DisplayName("Verify precompiled rendering supports HtmlAttribute in free-standing attribute position with parity")
+    void testValidFreestandingHtmlAttribute() {
+        FreestandingHtmlAttrCard active = new FreestandingHtmlAttrCard(HtmlAttribute.of("data-test", "val"));
+        JssrPrecompiler.enableGlobalPrecompilation(false);
+        String interpreted = active.render();
+        JssrPrecompiler.enableGlobalPrecompilation(true);
+        String compiled = active.renderPrecompiled();
+
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(FreestandingHtmlAttrCard.class));
+        assertEquals(interpreted, compiled);
     }
 
     @Test

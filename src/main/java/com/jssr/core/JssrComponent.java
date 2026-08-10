@@ -1,5 +1,6 @@
 package com.jssr.core;
 
+import com.jssr.core.compiler.JssrSecurity;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -249,7 +250,7 @@ public interface JssrComponent {
                             activeAttr = pendingAttr;
                         }
 
-                        if (val instanceof RawHtml) {
+                        if (!activeAttr.isEmpty() && val instanceof RawHtml) {
                             throw new IllegalArgumentException("RawHtml cannot be interpolated inside an HTML attribute. Use safe string values, SafeUrl, BooleanAttribute, or HtmlAttribute.");
                         }
 
@@ -276,48 +277,40 @@ public interface JssrComponent {
                                     + activeAttr + "=\"${" + varName + "}\"");
                         } else {
                             // Quoted attribute value position, e.g. title="${title}" or href = "${title}"
-                            String lowerAttr = activeAttr.toLowerCase(Locale.ROOT);
-
-                            if ("srcdoc".equals(lowerAttr)) {
-                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                            JssrSecurity.AttributeContext ctx = JssrSecurity.classifyAttribute(activeAttr);
+                            switch (ctx) {
+                                case SRCDOC -> throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                         + "} inside 'srcdoc' attribute is forbidden due to HTML nested decoding risks.");
-                            }
-
-                            if (lowerAttr.startsWith("x-") || lowerAttr.startsWith("@") || lowerAttr.startsWith(":") || lowerAttr.startsWith("hx-on")) {
-                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                case FRAMEWORK_EXPRESSION -> throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                         + "} is not allowed inside executable framework attribute '" + activeAttr 
                                         + "'. Use safe server-side state or explicit expression APIs.");
-                            }
-
-                            if (lowerAttr.startsWith("on")) {
-                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                case EVENT_HANDLER -> throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                         + "} is not allowed inside inline event handler attribute '" + activeAttr 
                                         + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
-                            }
-
-                            if ("style".equals(lowerAttr)) {
-                                throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                case STYLE -> throw new IllegalArgumentException("JSSR interpolation ${" + varName 
                                         + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
-                            }
-
-                            if ("srcset".equals(lowerAttr) || "imagesrcset".equals(lowerAttr)) {
-                                if (!(val instanceof SafeSrcSet) && valType != SafeSrcSet.class) {
-                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                            + "} inside multi-candidate image attribute '" + activeAttr + "' requires a SafeSrcSet field type instead of " 
-                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                case SRCSET -> {
+                                    if (!(val instanceof SafeSrcSet) && valType != SafeSrcSet.class) {
+                                        throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                                + "} inside multi-candidate image attribute '" + activeAttr + "' requires a SafeSrcSet field type instead of " 
+                                                + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                    }
                                 }
-                            } else if ("ping".equals(lowerAttr)) {
-                                if (!(val instanceof SafeUrlList) && valType != SafeUrlList.class) {
-                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                            + "} inside space-separated URL attribute 'ping' requires a SafeUrlList field type instead of " 
-                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                case URL_LIST -> {
+                                    if (!(val instanceof SafeUrlList) && valType != SafeUrlList.class) {
+                                        throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                                + "} inside space-separated URL attribute '" + activeAttr + "' requires a SafeUrlList field type instead of " 
+                                                + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                    }
                                 }
-                            } else if (URL_ATTRIBUTES.contains(lowerAttr)) {
-                                if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
-                                    throw new IllegalArgumentException("JSSR interpolation ${" + varName 
-                                            + "} inside URL attribute '" + activeAttr + "' requires a SafeUrl field type instead of " 
-                                            + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                case URL -> {
+                                    if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
+                                        throw new IllegalArgumentException("JSSR interpolation ${" + varName 
+                                                + "} inside URL attribute '" + activeAttr + "' requires a SafeUrl field type instead of " 
+                                                + (valType != null ? valType.getSimpleName() : "String") + ".");
+                                    }
                                 }
+                                default -> {}
                             }
 
                             String formattedVal;
@@ -347,6 +340,10 @@ public interface JssrComponent {
                             valStr = raw.value() == null ? "" : raw.value();
                         } else if (val instanceof SafeUrl safe) {
                             valStr = escapeHtml(safe.render());
+                        } else if (val instanceof SafeSrcSet safeSet) {
+                            valStr = escapeHtml(safeSet.render());
+                        } else if (val instanceof SafeUrlList safeList) {
+                            valStr = escapeHtml(safeList.render());
                         } else if (val instanceof JssrComponent jc) {
                             valStr = jc.render();
                         } else if (val instanceof Optional<?> opt) {
@@ -368,6 +365,7 @@ public interface JssrComponent {
                     sb.append("-->");
                     i += 3;
                     blockContext = null;
+                    inTag = false;
                     continue;
                 }
             } else if ("script".equals(blockContext)) {
@@ -375,6 +373,7 @@ public interface JssrComponent {
                     sb.append(html, i, i + 9);
                     i += 9;
                     blockContext = null;
+                    inTag = false;
                     continue;
                 }
             } else if ("style".equals(blockContext)) {
@@ -382,6 +381,7 @@ public interface JssrComponent {
                     sb.append(html, i, i + 8);
                     i += 8;
                     blockContext = null;
+                    inTag = false;
                     continue;
                 }
             } else {
@@ -910,6 +910,11 @@ public interface JssrComponent {
         if (obj == null) {
             return new PropertyResult(null, Object.class, false);
         }
+
+        if (obj instanceof Throwable t && "message".equals(trimmedPath)) {
+            String msg = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+            return new PropertyResult(msg, String.class, true);
+        }
         Object curr = obj;
         Class<?> currType = obj.getClass();
 
@@ -980,6 +985,31 @@ public interface JssrComponent {
         int curr = 0;
 
         while (curr < len) {
+            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
+                int commentEnd = text.indexOf("-->", curr + 4);
+                if (commentEnd != -1) {
+                    result.append(text, curr, commentEnd + 3);
+                    curr = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
+                if (scriptEnd != -1) {
+                    result.append(text, curr, scriptEnd + 9);
+                    curr = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
+                if (styleEnd != -1) {
+                    result.append(text, curr, styleEnd + 8);
+                    curr = styleEnd + 8;
+                    continue;
+                }
+            }
+
             int directiveIdx = findNextControlFlowDirective(text, curr);
             if (directiveIdx == -1) {
                 result.append(text, curr, len);
@@ -1760,10 +1790,20 @@ public interface JssrComponent {
     }
 
     private static boolean isValidDirectiveBoundary(String text, int idx, int len) {
-        boolean validBefore = (idx == 0 || Character.isWhitespace(text.charAt(idx - 1)) || text.charAt(idx - 1) == '>' || text.charAt(idx - 1) == '\n');
+        boolean validBefore = (idx == 0 || !Character.isLetterOrDigit(text.charAt(idx - 1)));
         int afterIdx = idx + len;
-        boolean validAfter = (afterIdx >= text.length() || Character.isWhitespace(text.charAt(afterIdx)) || text.charAt(afterIdx) == '(' || text.charAt(afterIdx) == '<' || text.charAt(afterIdx) == ':');
+        boolean validAfter = (afterIdx >= text.length() || !Character.isLetterOrDigit(text.charAt(afterIdx)));
         return validBefore && validAfter;
+    }
+
+    private static boolean isDirectiveAt(String text, int idx) {
+        return (text.startsWith("@if", idx) && isValidDirectiveBoundary(text, idx, 3))
+            || (text.startsWith("@for", idx) && isValidDirectiveBoundary(text, idx, 4))
+            || (text.startsWith("@switch", idx) && isValidDirectiveBoundary(text, idx, 7))
+            || (text.startsWith("@try", idx) && isValidDirectiveBoundary(text, idx, 4))
+            || (text.startsWith("@throw", idx) && isValidDirectiveBoundary(text, idx, 6))
+            || (text.startsWith("@continue", idx) && isValidDirectiveBoundary(text, idx, 9))
+            || (text.startsWith("@break", idx) && isValidDirectiveBoundary(text, idx, 6));
     }
 
     private static int findMatchingParen(String text, int openIdx) {
@@ -1973,6 +2013,10 @@ public interface JssrComponent {
     }
 
     public static String renderInterpolatedExpression(JssrComponent component, Map<String, Object> localScope, String expr) {
+        return renderInterpolatedExpression(component, localScope, expr, false, "", (char) 0);
+    }
+
+    public static String renderInterpolatedExpression(JssrComponent component, Map<String, Object> localScope, String expr, boolean inTag, String activeAttr, char quoteChar) {
         if (expr == null || expr.isBlank()) return "";
         PropertyResult res = resolveProperty(component, localScope, expr);
         if (!res.found()) {
@@ -1980,14 +2024,72 @@ public interface JssrComponent {
                     + (component != null ? component.getClass().getSimpleName() : "null"));
         }
         Object val = res.value();
-        if (val == null) return "";
-        if (val instanceof RawHtml raw) return raw.value() == null ? "" : raw.value();
-        if (val instanceof SafeUrl safe) return escapeHtml(safe.render());
-        if (val instanceof SafeSrcSet safeSet) return escapeHtml(safeSet.render());
-        if (val instanceof SafeUrlList safeList) return escapeHtml(safeList.render());
-        if (val instanceof JssrComponent jc) return jc.render();
-        if (val instanceof Optional<?> opt) return opt.map(o -> escapeHtml(o.toString())).orElse("");
-        return escapeHtml(val.toString());
+        Class<?> valType = res.type();
+
+        if (inTag) {
+            if (!activeAttr.isEmpty() && val instanceof RawHtml) {
+                throw new IllegalArgumentException("RawHtml cannot be interpolated inside an HTML attribute. Use safe string values, SafeUrl, BooleanAttribute, or HtmlAttribute.");
+            }
+
+            if (quoteChar == 0 && activeAttr.isEmpty()) {
+                if (val instanceof BooleanAttribute ba) {
+                    return ba.template();
+                } else if (val instanceof HtmlAttribute ha) {
+                    return ha.template();
+                } else if (valType == boolean.class || valType == Boolean.class || val instanceof Boolean) {
+                    boolean boolVal = val != null && (Boolean) val;
+                    String attrName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
+                    return boolVal ? attrName : "";
+                } else {
+                    throw new IllegalArgumentException("JSSR interpolation ${" + expr
+                            + "} of type " + (valType != null ? valType.getSimpleName() : "unknown")
+                            + " in free-standing HTML attribute position is forbidden. Use boolean fields, BooleanAttribute, or HtmlAttribute for dynamic attributes.");
+                }
+            } else if (quoteChar == 0 && !activeAttr.isEmpty()) {
+                throw new IllegalArgumentException("JSSR interpolation in an unquoted HTML attribute is forbidden. Quote the attribute value: " 
+                        + activeAttr + "=\"${" + expr + "}\"");
+            } else {
+                JssrSecurity.AttributeContext ctx = JssrSecurity.classifyAttribute(activeAttr);
+                switch (ctx) {
+                    case SRCDOC -> throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} inside 'srcdoc' attribute is forbidden due to HTML nested decoding risks.");
+                    case FRAMEWORK_EXPRESSION -> throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} is not allowed inside executable framework attribute '" + activeAttr + "'. Use safe server-side state or explicit expression APIs.");
+                    case EVENT_HANDLER -> throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} is not allowed inside inline event handler attribute '" + activeAttr + "'. Use HTMX/Alpine.js attributes or unobtrusive event listeners.");
+                    case STYLE -> throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} is not allowed inside inline style attribute 'style'. Use CSS custom properties or external stylesheets.");
+                    case SRCSET -> {
+                        if (!(val instanceof SafeSrcSet) && valType != SafeSrcSet.class) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} inside multi-candidate image attribute '" + activeAttr + "' requires a SafeSrcSet field type.");
+                        }
+                    }
+                    case URL_LIST -> {
+                        if (!(val instanceof SafeUrlList) && valType != SafeUrlList.class) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} inside space-separated URL attribute '" + activeAttr + "' requires a SafeUrlList field type.");
+                        }
+                    }
+                    case URL -> {
+                        if (!(val instanceof SafeUrl) && valType != SafeUrl.class) {
+                            throw new IllegalArgumentException("JSSR interpolation ${" + expr + "} inside URL attribute '" + activeAttr + "' requires a SafeUrl field type.");
+                        }
+                    }
+                    default -> {}
+                }
+
+                if (val == null) return "";
+                if (val instanceof SafeUrl safe) return escapeHtml(safe.render());
+                if (val instanceof SafeSrcSet safeSet) return escapeHtml(safeSet.render());
+                if (val instanceof SafeUrlList safeList) return escapeHtml(safeList.render());
+                if (val instanceof Optional<?> opt) return opt.map(o -> escapeHtml(o.toString())).orElse("");
+                return escapeHtml(val.toString());
+            }
+        } else {
+            if (val == null) return "";
+            if (val instanceof RawHtml raw) return raw.value() == null ? "" : raw.value();
+            if (val instanceof SafeUrl safe) return escapeHtml(safe.render());
+            if (val instanceof SafeSrcSet safeSet) return escapeHtml(safeSet.render());
+            if (val instanceof SafeUrlList safeList) return escapeHtml(safeList.render());
+            if (val instanceof JssrComponent jc) return jc.render();
+            if (val instanceof Optional<?> opt) return opt.map(o -> escapeHtml(o.toString())).orElse("");
+            return escapeHtml(val.toString());
+        }
     }
 
     public static String renderCustomTag(JssrComponent component, Map<String, Object> localScope, String tagName, Map<String, String> attributes) {
