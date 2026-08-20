@@ -12,39 +12,39 @@ public class ControlFlowTest {
 
     public record SimpleIfComp(boolean active) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (active)
+                @if (active) {
                     <span class="active">Active Account</span>
-                @end
+                }
                 """;
         }
     }
 
     public record IfElseComp(boolean active) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (active)
+                @if (active) {
                     <span class="status">Online</span>
-                @else
+                } @else {
                     <span class="status">Offline</span>
-                @end
+                }
                 """;
         }
     }
 
     public record MultiBranchComp(String role) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (role == 'ADMIN')
+                @if (role == 'ADMIN') {
                     <span class="badge">Admin</span>
-                @elseif (role == 'DEV')
+                } @elseif (role == 'DEV') {
                     <span class="badge">Developer</span>
-                @else
+                } @else {
                     <span class="badge">User</span>
-                @end
+                }
                 """;
         }
     }
@@ -53,24 +53,24 @@ public class ControlFlowTest {
 
     public record PropertyPathComp(UserProfile user) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (user.isAdmin)
+                @if (user.isAdmin) {
                     <span class="admin">Admin Profile for ${user.name}</span>
-                @else
+                } @else {
                     <span class="user">User Profile for ${user.name}</span>
-                @end
+                }
                 """;
         }
     }
 
     public record NegatedComp(boolean disabled) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (!disabled)
+                @if (!disabled) {
                     <button>Submit</button>
-                @end
+                }
                 """;
         }
     }
@@ -83,67 +83,67 @@ public class ControlFlowTest {
         List<String> items
     ) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (checkedAttr)
+                @if (checkedAttr) {
                     <p>Checked</p>
-                @end
-                @if (nickname)
+                }
+                @if (nickname) {
                     <p>Nick: ${nickname}</p>
-                @end
-                @if (title)
+                }
+                @if (title) {
                     <p>Title: ${title}</p>
-                @end
-                @if (count)
+                }
+                @if (count) {
                     <p>Count: ${count}</p>
-                @end
-                @if (items)
+                }
+                @if (items) {
                     <p>Has Items</p>
-                @end
+                }
                 """;
         }
     }
 
     public record RelationalComp(int count, int level) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (count > 0)
+                @if (count > 0) {
                     <p>Positive Count</p>
-                @end
-                @if (level >= 5)
+                }
+                @if (level >= 5) {
                     <p>High Level</p>
-                @else
+                } @else {
                     <p>Low Level</p>
-                @end
+                }
                 """;
         }
     }
 
     public record NestedIfComp(boolean outer, boolean inner) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (outer)
+                @if (outer) {
                     <div class="outer">
-                        @if (inner)
+                        @if (inner) {
                             <span class="inner">Inner Content</span>
-                        @else
+                        } @else {
                             <span class="inner">Inner Fallback</span>
-                        @end
+                        }
                     </div>
-                @else
+                } @else {
                     <div class="outer-fallback">Disabled</div>
-                @end
+                }
                 """;
         }
     }
 
     public record UnclosedIfComp(boolean active) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (active)
+                @if (active) {
                     <div>Missing end</div>
                 """;
         }
@@ -151,11 +151,11 @@ public class ControlFlowTest {
 
     public record UnknownVarIfComp(String name) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
-                @if (unknownField)
+                @if (unknownField) {
                     <div>Text</div>
-                @end
+                }
                 """;
         }
     }
@@ -164,55 +164,55 @@ public class ControlFlowTest {
     @DisplayName("@if (condition) evaluates true and false branches correctly")
     void testSimpleIfTrueAndFalse() {
         SimpleIfComp compTrue = new SimpleIfComp(true);
-        assertTrue(compTrue.render().contains("<span class=\"active\">Active Account</span>"));
+        assertTrue(JssrComponent.render(compTrue).contains("<span class=\"active\">Active Account</span>"));
 
         SimpleIfComp compFalse = new SimpleIfComp(false);
-        assertFalse(compFalse.render().contains("Active Account"));
+        assertFalse(JssrComponent.render(compFalse).contains("Active Account"));
     }
 
     @Test
-    @DisplayName("@if ... @else ... @end renders appropriate branch")
+    @DisplayName("@if ... @else ... renders appropriate branch")
     void testIfElse() {
         IfElseComp online = new IfElseComp(true);
-        assertTrue(online.render().contains("<span class=\"status\">Online</span>"));
-        assertFalse(online.render().contains("Offline"));
+        assertTrue(JssrComponent.render(online).contains("<span class=\"status\">Online</span>"));
+        assertFalse(JssrComponent.render(online).contains("Offline"));
 
         IfElseComp offline = new IfElseComp(false);
-        assertTrue(offline.render().contains("<span class=\"status\">Offline</span>"));
-        assertFalse(offline.render().contains("Online"));
+        assertTrue(JssrComponent.render(offline).contains("<span class=\"status\">Offline</span>"));
+        assertFalse(JssrComponent.render(offline).contains("Online"));
     }
 
     @Test
-    @DisplayName("@if ... @elseif ... @else ... @end handles multiple conditions")
+    @DisplayName("@if ... @elseif ... @else ... handles multiple conditions")
     void testIfElseIfElse() {
         MultiBranchComp admin = new MultiBranchComp("ADMIN");
-        assertTrue(admin.render().contains("<span class=\"badge\">Admin</span>"));
+        assertTrue(JssrComponent.render(admin).contains("<span class=\"badge\">Admin</span>"));
 
         MultiBranchComp dev = new MultiBranchComp("DEV");
-        assertTrue(dev.render().contains("<span class=\"badge\">Developer</span>"));
+        assertTrue(JssrComponent.render(dev).contains("<span class=\"badge\">Developer</span>"));
 
         MultiBranchComp user = new MultiBranchComp("GUEST");
-        assertTrue(user.render().contains("<span class=\"badge\">User</span>"));
+        assertTrue(JssrComponent.render(user).contains("<span class=\"badge\">User</span>"));
     }
 
     @Test
     @DisplayName("Nested property paths in @if (user.isAdmin) resolve correctly")
     void testPropertyPathCondition() {
         PropertyPathComp adminComp = new PropertyPathComp(new UserProfile("Alice", true));
-        assertTrue(adminComp.render().contains("Admin Profile for Alice"));
+        assertTrue(JssrComponent.render(adminComp).contains("Admin Profile for Alice"));
 
         PropertyPathComp userComp = new PropertyPathComp(new UserProfile("Bob", false));
-        assertTrue(userComp.render().contains("User Profile for Bob"));
+        assertTrue(JssrComponent.render(userComp).contains("User Profile for Bob"));
     }
 
     @Test
     @DisplayName("Negated condition @if (!disabled) works correctly")
     void testNegatedCondition() {
         NegatedComp enabled = new NegatedComp(false);
-        assertTrue(enabled.render().contains("<button>Submit</button>"));
+        assertTrue(JssrComponent.render(enabled).contains("<button>Submit</button>"));
 
         NegatedComp disabled = new NegatedComp(true);
-        assertFalse(disabled.render().contains("<button>Submit</button>"));
+        assertFalse(JssrComponent.render(disabled).contains("<button>Submit</button>"));
     }
 
     @Test
@@ -225,7 +225,7 @@ public class ControlFlowTest {
             42,
             List.of("A", "B")
         );
-        String renderedTruthy = truthy.render();
+        String renderedTruthy = JssrComponent.render(truthy);
         assertTrue(renderedTruthy.contains("<p>Checked</p>"));
         assertTrue(renderedTruthy.contains("<p>Nick: Speedy</p>"));
         assertTrue(renderedTruthy.contains("<p>Title: Hello World</p>"));
@@ -239,7 +239,7 @@ public class ControlFlowTest {
             0,
             List.of()
         );
-        String renderedFalsy = falsy.render();
+        String renderedFalsy = JssrComponent.render(falsy);
         assertFalse(renderedFalsy.contains("<p>Checked</p>"));
         assertFalse(renderedFalsy.contains("<p>Nick:"));
         assertFalse(renderedFalsy.contains("<p>Title:"));
@@ -251,12 +251,12 @@ public class ControlFlowTest {
     @DisplayName("Relational operators (>, >=, <, <=) in @if conditions evaluate correctly")
     void testRelationalOperators() {
         RelationalComp high = new RelationalComp(5, 10);
-        String resHigh = high.render();
+        String resHigh = JssrComponent.render(high);
         assertTrue(resHigh.contains("<p>Positive Count</p>"));
         assertTrue(resHigh.contains("<p>High Level</p>"));
 
         RelationalComp low = new RelationalComp(0, 2);
-        String resLow = low.render();
+        String resLow = JssrComponent.render(low);
         assertFalse(resLow.contains("<p>Positive Count</p>"));
         assertTrue(resLow.contains("<p>Low Level</p>"));
     }
@@ -265,17 +265,17 @@ public class ControlFlowTest {
     @DisplayName("Nested @if directive blocks evaluate properly")
     void testNestedIfBlocks() {
         NestedIfComp bothTrue = new NestedIfComp(true, true);
-        String res1 = bothTrue.render();
+        String res1 = JssrComponent.render(bothTrue);
         assertTrue(res1.contains("class=\"outer\""));
         assertTrue(res1.contains("Inner Content"));
 
         NestedIfComp outerTrueInnerFalse = new NestedIfComp(true, false);
-        String res2 = outerTrueInnerFalse.render();
+        String res2 = JssrComponent.render(outerTrueInnerFalse);
         assertTrue(res2.contains("class=\"outer\""));
         assertTrue(res2.contains("Inner Fallback"));
 
         NestedIfComp outerFalse = new NestedIfComp(false, true);
-        String res3 = outerFalse.render();
+        String res3 = JssrComponent.render(outerFalse);
         assertTrue(res3.contains("Disabled"));
         assertFalse(res3.contains("class=\"outer\""));
     }
@@ -284,16 +284,16 @@ public class ControlFlowTest {
     @DisplayName("Unclosed @if directive should fail fast with explicit IllegalArgumentException")
     void testUnclosedIfDirectiveFailFast() {
         UnclosedIfComp comp = new UnclosedIfComp(true);
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("Unclosed JSSR control flow directive '@if'"));
-        assertTrue(ex.getMessage().contains("Expected matching '@end'"));
+        assertTrue(ex.getMessage().contains("Expected matching '}'"));
     }
 
     @Test
     @DisplayName("Unknown control flow condition property should fail fast with explicit IllegalArgumentException")
     void testUnknownVariableFailFast() {
         UnknownVarIfComp comp = new UnknownVarIfComp("Alice");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("Unknown JSSR control flow property 'unknownField'"));
     }
 }

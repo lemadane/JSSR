@@ -18,10 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 public class ParserFuzzTest {
 
     private static final String[] DIRECTIVES = {
-        "@if (true):", "@if (false):", "@elseif (true):", "@else:", "@end",
-        "@for (item : list):", "@while (true):", "@while (false):",
-        "@switch (user.role):", "@case ('ADMIN'):", "@default:",
-        "@try:", "@catch(e):", "@finally:", "@throw(\"Fuzz Error\"):",
+        "@if (true) {", "@if (false) {", "@elseif (true) {", "@else {", "}",
+        "@for (item : list) {",
+        "@switch (user.role) {", "@case ('ADMIN') {", "@default {",
+        "@try {", "@catch(e) {", "@finally {", "@throw(\"Fuzz Error\")",
         "@continue", "@break"
     };
 
@@ -35,7 +35,7 @@ public class ParserFuzzTest {
 
     public record FuzzDynamicComponent(String customTemplate) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return customTemplate;
         }
     }
@@ -80,11 +80,11 @@ public class ParserFuzzTest {
         int depth = 150;
 
         for (int i = 0; i < depth; i++) {
-            nested.append("@try:\n@if (true):\n");
+            nested.append("@try {\n@if (true) {\n");
         }
         nested.append("<div>Nested Center</div>\n");
         for (int i = 0; i < depth; i++) {
-            nested.append("@end\n@catch(e):\n@end\n");
+            nested.append("}\n} @catch(e) {\n}\n");
         }
 
         FuzzDynamicComponent comp = new FuzzDynamicComponent(nested.toString());

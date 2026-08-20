@@ -17,7 +17,7 @@ public record UserRow(
     }
 
     @Override
-    public String template() {
+    public String render() {
         if (id == null) {
             return "";
         }

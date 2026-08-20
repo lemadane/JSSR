@@ -20,7 +20,7 @@ public record UserForm(
     }
 
     @Override
-    public String template() {
+    public String render() {
         String formAction = isEdit ? "/users/" + (id != null ? id : "") : "/users";
         String submitText = isEdit ? "Save Changes" : "Create User";
         String modalTitle = isEdit ? "Edit User" : "Create New User";

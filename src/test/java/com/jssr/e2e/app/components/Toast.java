@@ -9,7 +9,7 @@ public record Toast(String message, String type) implements JssrComponent {
     }
 
     @Override
-    public String template() {
+    public String render() {
         if (message == null || message.isBlank()) {
             return "";
         }

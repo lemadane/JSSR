@@ -48,13 +48,9 @@ public record SafeSrcSet(String value) implements JssrComponent {
         return String.join(", ", sanitizedCandidates);
     }
 
+    @Override
     public String render() {
         return sanitize(value);
-    }
-
-    @Override
-    public String template() {
-        return render();
     }
 
     @Override

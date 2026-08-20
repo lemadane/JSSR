@@ -63,7 +63,7 @@ public final class JavaCodeGenerator {
             generateNodeStatements(ast, componentClass, recordFields, canDirectCast, sb, "scope", "        ", varSeq);
         } else {
             // Dynamic fallback for non-extractable template definitions
-            sb.append("        String rawHtml = component.template();\n");
+            sb.append("        String rawHtml = component.render();\n");
             sb.append("        if (rawHtml == null || rawHtml.isBlank()) {\n");
             sb.append("            if (rawHtml != null) sb.append(rawHtml);\n");
             sb.append("            return;\n");
@@ -253,22 +253,22 @@ public final class JavaCodeGenerator {
                     } else if (type == Character.class) {
                         sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(String.valueOf(c.").append(expr).append("())) : \"\");\n");
                     } else if (com.jssr.core.RawHtml.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
                     } else if (com.jssr.core.SafeUrl.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
                     } else if (com.jssr.core.SafeSrcSet.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
                     } else if (com.jssr.core.SafeUrlList.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
                     } else if (java.util.Optional.class.isAssignableFrom(type)) {
                         sb.append(indent).append("sb.append(c.").append(expr).append("() != null && c.").append(expr).append("().isPresent() ? JssrComponent.escapeHtml(String.valueOf(c.").append(expr).append("().get())) : \"\");\n");
                     } else if (com.jssr.core.BooleanAttribute.class.isAssignableFrom(type)) {
-                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
+                        sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
                     } else if (com.jssr.core.HtmlAttribute.class.isAssignableFrom(type)) {
                         if (isQuotedAttr) {
-                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().template()) : \"\");\n");
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? JssrComponent.escapeHtml(c.").append(expr).append("().render()) : \"\");\n");
                         } else {
-                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().template() : \"\");\n");
+                            sb.append(indent).append("sb.append(c.").append(expr).append("() != null ? c.").append(expr).append("().render() : \"\");\n");
                         }
                     } else if (JssrComponent.class.isAssignableFrom(type)) {
                         if (isQuotedAttr) {
@@ -344,12 +344,18 @@ public final class JavaCodeGenerator {
                 String catchVar = (tryNode.catchVar() == null || tryNode.catchVar().isBlank()) ? "err" : tryNode.catchVar();
 
                 sb.append(indent).append("try {\n");
-                generateNodeStatements(tryNode.tryBody(), componentClass, recordFields, canDirectCast, sb, currentScopeVar, indent + "    ", varSeq);
+                sb.append(indent).append("    StringBuilder trySb_").append(id).append(" = new StringBuilder();\n");
+                StringBuilder tryBlockCode = new StringBuilder();
+                generateNodeStatements(tryNode.tryBody(), componentClass, recordFields, canDirectCast, tryBlockCode, currentScopeVar, indent + "    ", varSeq);
+                String tryCode = tryBlockCode.toString().replace("sb.append(", "trySb_" + id + ".append(");
+                sb.append(tryCode);
+                sb.append(indent).append("    sb.append(trySb_").append(id).append(");\n");
 
                 if (!tryNode.catchBody().isEmpty()) {
                     sb.append(indent).append("} catch (Throwable err_ex_").append(id).append(") {\n");
                     sb.append(indent).append("    Map<String, Object> ").append(catchScopeVar).append(" = new java.util.HashMap<>(").append(currentScopeVar).append(");\n");
-                    sb.append(indent).append("    String safeMsg_").append(id).append(" = err_ex_").append(id).append(".getMessage() == null ? err_ex_").append(id).append(".getClass().getSimpleName() : err_ex_").append(id).append(".getMessage();\n");
+                    sb.append(indent).append("    String rawMsg_").append(id).append(" = err_ex_").append(id).append(".getMessage() == null ? err_ex_").append(id).append(".getClass().getSimpleName() : err_ex_").append(id).append(".getMessage();\n");
+                    sb.append(indent).append("    String safeMsg_").append(id).append(" = rawMsg_").append(id).append(".replace(\"${\", \"&#36;{\");\n");
                     sb.append(indent).append("    ").append(catchScopeVar).append(".put(\"").append(catchVar).append("\", err_ex_").append(id).append(");\n");
                     sb.append(indent).append("    ").append(catchScopeVar).append(".put(\"").append(catchVar).append(".message\", safeMsg_").append(id).append(");\n");
                     sb.append(indent).append("    ").append(catchScopeVar).append(".put(\"err\", err_ex_").append(id).append(");\n");
@@ -377,34 +383,48 @@ public final class JavaCodeGenerator {
                 break;
             } else if (node instanceof TemplateNode.SwitchNode switchNode) {
                 int id = varSeq.incrementAndGet();
-                String expr = switchNode.expression();
-                sb.append(indent).append("String switchVal_").append(id).append(" = String.valueOf(JssrComponent.resolveProperty(component, ").append(currentScopeVar).append(", \"")
-                        .append(escapeJavaString(expr)).append("\").value());\n");
+                String expr = switchNode.expression().trim();
+                if (expr.startsWith("typeof(") && expr.endsWith(")")) {
+                    String targetPath = expr.substring(7, expr.length() - 1).trim();
+                    sb.append(indent).append("Object switchObj_").append(id).append(" = JssrComponent.resolveProperty(component, ").append(currentScopeVar).append(", \"")
+                            .append(escapeJavaString(targetPath)).append("\").value();\n");
+                    sb.append(indent).append("String switchVal_").append(id).append(" = switchObj_").append(id)
+                            .append(" != null ? switchObj_").append(id).append(".getClass().getSimpleName() : \"null\";\n");
+                } else {
+                    sb.append(indent).append("String switchVal_").append(id).append(" = String.valueOf(JssrComponent.resolveProperty(component, ").append(currentScopeVar).append(", \"")
+                            .append(escapeJavaString(expr)).append("\").value());\n");
+                }
 
-                boolean firstCase = true;
+                sb.append(indent).append("boolean fallthrough_").append(id).append(" = false;\n");
+                sb.append(indent).append("boolean matchedAny_").append(id).append(" = false;\n");
+                sb.append(indent).append("switchLoop_").append(id).append(": do {\n");
+
                 for (Map.Entry<String, List<TemplateNode>> caseEntry : switchNode.cases().entrySet()) {
                     String caseExpr = caseEntry.getKey();
                     String cleanCase = caseExpr.replace("'", "").replace("\"", "");
-                    if (firstCase) {
-                        sb.append(indent).append("if (\"").append(escapeJavaString(cleanCase))
-                                .append("\".equalsIgnoreCase(switchVal_").append(id).append(")) {\n");
-                        firstCase = false;
-                    } else {
-                        sb.append(indent).append("} else if (\"").append(escapeJavaString(cleanCase))
-                                .append("\".equalsIgnoreCase(switchVal_").append(id).append(")) {\n");
-                    }
-                    generateNodeStatements(caseEntry.getValue(), componentClass, recordFields, canDirectCast, sb, currentScopeVar, indent + "    ", varSeq);
+                    sb.append(indent).append("    if (fallthrough_").append(id).append(" || \"").append(escapeJavaString(cleanCase))
+                            .append("\".equalsIgnoreCase(switchVal_").append(id).append(") || switchVal_").append(id).append(".equals(\"")
+                            .append(escapeJavaString(cleanCase)).append("\")) {\n");
+                    sb.append(indent).append("        fallthrough_").append(id).append(" = true;\n");
+                    sb.append(indent).append("        matchedAny_").append(id).append(" = true;\n");
+
+                    StringBuilder caseCodeBuf = new StringBuilder();
+                    generateNodeStatements(caseEntry.getValue(), componentClass, recordFields, canDirectCast, caseCodeBuf, currentScopeVar, indent + "        ", varSeq);
+                    String caseCode = caseCodeBuf.toString().replace("break;", "break switchLoop_" + id + ";");
+                    sb.append(caseCode);
+                    sb.append(indent).append("    }\n");
                 }
 
                 if (!switchNode.defaultBranch().isEmpty()) {
-                    if (!firstCase) {
-                        sb.append(indent).append("} else {\n");
-                    }
-                    generateNodeStatements(switchNode.defaultBranch(), componentClass, recordFields, canDirectCast, sb, currentScopeVar, indent + "    ", varSeq);
+                    sb.append(indent).append("    if (fallthrough_").append(id).append(" || !matchedAny_").append(id).append(") {\n");
+                    StringBuilder defaultCodeBuf = new StringBuilder();
+                    generateNodeStatements(switchNode.defaultBranch(), componentClass, recordFields, canDirectCast, defaultCodeBuf, currentScopeVar, indent + "        ", varSeq);
+                    String defaultCode = defaultCodeBuf.toString().replace("break;", "break switchLoop_" + id + ";");
+                    sb.append(defaultCode);
+                    sb.append(indent).append("    }\n");
                 }
-                if (!firstCase || !switchNode.defaultBranch().isEmpty()) {
-                    sb.append(indent).append("}\n");
-                }
+
+                sb.append(indent).append("} while (false);\n");
             } else if (node instanceof TemplateNode.ComponentNode child) {
                 sb.append(indent).append("sb.append(JssrComponent.renderCustomTag(component, ").append(currentScopeVar).append(", \"")
                         .append(escapeJavaString(child.tagName())).append("\", Collections.emptyMap()));\n");
@@ -480,12 +500,12 @@ public final class JavaCodeGenerator {
                 Constructor<? extends JssrComponent> ctor = componentClass.getDeclaredConstructor(paramTypes);
                 ctor.setAccessible(true);
                 JssrComponent dummy = ctor.newInstance(dummyArgs);
-                return dummy.template();
+                return dummy.render();
             } else {
                 Constructor<? extends JssrComponent> ctor = componentClass.getDeclaredConstructor();
                 ctor.setAccessible(true);
                 JssrComponent dummy = ctor.newInstance();
-                return dummy.template();
+                return dummy.render();
             }
         } catch (Exception e) {
             return null;

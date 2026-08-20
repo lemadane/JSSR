@@ -25,7 +25,7 @@ class PrecompiledPerformanceBenchmarkTest {
 
     public record BenchmarkCard(String title, String author, SafeUrl link, boolean published) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <article class="benchmark-card" ${published}>
                     <h2>${title}</h2>

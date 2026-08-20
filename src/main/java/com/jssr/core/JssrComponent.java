@@ -60,60 +60,80 @@ public interface JssrComponent {
     }
 
     /**
-     * Component HTML template method implemented by JSSR component Records.
+     * Component HTML render method implemented by JSSR component Records.
      *
      * @return Native Java 17 multiline text block string
      */
-    String template();
+    String render();
+
+    /**
+     * Default helper method to process and render a template string for this component.
+     *
+     * @param rawHtml Raw template text block string
+     * @return Fully rendered HTML string
+     */
+    default String render(String rawHtml) {
+        return JssrComponent.render(this, Collections.emptyMap(), rawHtml);
+    }
+
+    default String renderPrecompiled() {
+        return JssrComponent.renderPrecompiled(this, Collections.emptyMap());
+    }
 
     /**
      * Primary entry point. Interpolates ${fieldName} variables in a single pass, renders the template,
      * and automatically processes custom tags with depth recursion protection.
      *
+     * @param component Component instance
      * @return Fully rendered HTML string with resolved variables and child tags
      */
-    default String render() {
+    static String render(JssrComponent component) {
+        return render(component, Collections.emptyMap());
+    }
+
+    static String render(JssrComponent component, Map<String, Object> localScope) {
+        return render(component, localScope, null);
+    }
+
+    static String render(JssrComponent component, Map<String, Object> localScope, String explicitRawHtml) {
+        if (component == null) return "";
         if (com.jssr.core.compiler.JssrPrecompiler.isGlobalPrecompilationEnabled()) {
-            return renderPrecompiled();
+            return renderPrecompiled(component, localScope);
         }
 
         int depth = RENDER_DEPTH.get();
         if (depth > MAX_RENDER_DEPTH) {
             throw new IllegalStateException("JSSR component recursion limit exceeded (max depth " 
-                    + MAX_RENDER_DEPTH + ") for component: " + getClass().getSimpleName());
+                    + MAX_RENDER_DEPTH + ") for component: " + component.getClass().getSimpleName());
         }
 
         RENDER_DEPTH.set(depth + 1);
         try {
-            String rawHtml = template();
+            String rawHtml = explicitRawHtml != null ? explicitRawHtml : component.render();
             if (rawHtml == null || rawHtml.isBlank()) {
                 return rawHtml == null ? "" : rawHtml;
             }
 
-            Map<String, Object> localScope = Collections.emptyMap();
-            String controlFlowProcessed = processControlFlow(this, localScope, rawHtml);
-            String interpolatedHtml = interpolateVariables(this, localScope, controlFlowProcessed);
+            Map<String, Object> scope = (localScope == null) ? Collections.emptyMap() : localScope;
+            String controlFlowProcessed = processControlFlow(component, scope, rawHtml);
+            String interpolatedHtml = interpolateVariables(component, scope, controlFlowProcessed);
             return processCustomTags(interpolatedHtml);
         } finally {
             RENDER_DEPTH.set(depth);
         }
     }
 
-    /**
-     * Render the component using precompiled JVM bytecode execution.
-     *
-     * @return Fully rendered HTML string
-     */
-    default String renderPrecompiled() {
+    static String renderPrecompiled(JssrComponent component, Map<String, Object> localScope) {
+        if (component == null) return "";
         int depth = RENDER_DEPTH.get();
         if (depth > MAX_RENDER_DEPTH) {
             throw new IllegalStateException("JSSR component recursion limit exceeded (max depth " 
-                    + MAX_RENDER_DEPTH + ") for component: " + getClass().getSimpleName());
+                    + MAX_RENDER_DEPTH + ") for component: " + component.getClass().getSimpleName());
         }
 
         RENDER_DEPTH.set(depth + 1);
         try {
-            return com.jssr.core.compiler.JssrPrecompiler.renderPrecompiled(this);
+            return com.jssr.core.compiler.JssrPrecompiler.renderPrecompiled(component, localScope);
         } finally {
             RENDER_DEPTH.set(depth);
         }
@@ -257,9 +277,9 @@ public interface JssrComponent {
                         if (quoteChar == 0 && activeAttr.isEmpty()) {
                             // Free-standing attribute position inside tag, e.g. <input ${extra} />
                             if (val instanceof BooleanAttribute ba) {
-                                sb.append(ba.template());
+                                sb.append(ba.render());
                             } else if (val instanceof HtmlAttribute ha) {
-                                sb.append(ha.template());
+                                sb.append(ha.render());
                             } else if (valType == boolean.class || valType == Boolean.class || val instanceof Boolean) {
                                 boolean boolVal = val != null && (Boolean) val;
                                 String attrName = varName.contains(".") ? varName.substring(varName.lastIndexOf('.') + 1) : varName;
@@ -323,7 +343,7 @@ public interface JssrComponent {
                             } else if (val instanceof SafeUrlList safeList) {
                                 formattedVal = escapeHtml(safeList.render());
                             } else if (val instanceof JssrComponent jc) {
-                                formattedVal = escapeHtml(jc.render());
+                                formattedVal = escapeHtml(JssrComponent.render(jc));
                             } else if (val instanceof Optional<?> opt) {
                                 formattedVal = opt.map(o -> escapeHtml(o.toString())).orElse("");
                             } else {
@@ -347,7 +367,7 @@ public interface JssrComponent {
                         } else if (val instanceof SafeUrlList safeList) {
                             valStr = escapeHtml(safeList.render());
                         } else if (val instanceof JssrComponent jc) {
-                            valStr = jc.render();
+                            valStr = JssrComponent.render(jc);
                         } else if (val instanceof Optional<?> opt) {
                             valStr = opt.map(o -> escapeHtml(o.toString())).orElse("");
                         } else {
@@ -715,9 +735,13 @@ public interface JssrComponent {
         return attrs;
     }
 
+    private static ComponentMetadata getMetadata(Class<?> clazz) {
+        return METADATA_CACHE.get(clazz);
+    }
+
     private static String instantiateAndRender(Class<? extends JssrComponent> clazz, Map<String, String> attrs, boolean hasPairedBody) {
         try {
-            ComponentMetadata meta = METADATA_CACHE.get(clazz);
+            ComponentMetadata meta = getMetadata(clazz);
             if (meta.isRecord) {
                 RecordComponent[] recordComponents = meta.recordComponents;
                 Set<String> validNames = new HashSet<>();
@@ -767,10 +791,10 @@ public interface JssrComponent {
                 }
 
                 JssrComponent instance = (JssrComponent) meta.constructor.newInstance(args);
-                return instance.render();
+                return JssrComponent.render(instance);
             } else {
                 JssrComponent instance = (JssrComponent) meta.constructor.newInstance();
-                return instance.render();
+                return JssrComponent.render(instance);
             }
         } catch (Exception e) {
             if (e instanceof RuntimeException re) throw re;
@@ -925,7 +949,7 @@ public interface JssrComponent {
             if (curr == null) {
                 return new PropertyResult(null, Object.class, false);
             }
-            ComponentMetadata meta = METADATA_CACHE.get(curr.getClass());
+            ComponentMetadata meta = getMetadata(curr.getClass());
             if (meta != null && meta.isRecord && meta.accessors.containsKey(part)) {
                 try {
                     Method m = meta.accessors.get(part);
@@ -1074,24 +1098,13 @@ public interface JssrComponent {
     record IfBlockResult(List<Branch> branches, int endIndex) {}
     record Branch(String conditionExpr, boolean isElse, String body) {}
 
-    private static IfBlockResult parseIfBlockAt(JssrComponent component, String text, int startIdx) {
-        int len = text.length();
-        List<Branch> branches = new ArrayList<>();
-
-        int condOpen = text.indexOf('(', startIdx + 3);
-        int condClose = findMatchingParen(text, condOpen);
-        if (condOpen == -1 || condClose == -1) {
-            throw new IllegalArgumentException("Malformed '@if' condition in directive starting at index " + startIdx 
-                    + " in component " + component.getClass().getSimpleName());
+    private static int findMatchingBrace(String text, int openBraceIdx) {
+        if (openBraceIdx == -1 || openBraceIdx >= text.length() || text.charAt(openBraceIdx) != '{') {
+            return -1;
         }
-        String firstCond = text.substring(condOpen + 1, condClose).trim();
-
-        int curr = condClose + 1;
-        int bodyStart = curr;
-
-        String currentCond = firstCond;
-        boolean currentIsElse = false;
-        int nestedDepth = 0;
+        int len = text.length();
+        int depth = 1;
+        int curr = openBraceIdx + 1;
 
         while (curr < len) {
             if (curr + 4 <= len && text.startsWith("<!--", curr)) {
@@ -1116,56 +1129,132 @@ public interface JssrComponent {
                 }
             }
 
-            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                nestedDepth++;
-                curr += 7;
-            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
-                nestedDepth++;
-                curr += 3;
-            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                if (nestedDepth == 0) {
-                    String body = text.substring(bodyStart, curr);
-                    branches.add(new Branch(currentCond, currentIsElse, body));
-                    return new IfBlockResult(branches, curr + 4);
-                } else {
-                    nestedDepth--;
-                    curr += 4;
+            if (curr + 1 < len && text.charAt(curr) == '$' && text.charAt(curr + 1) == '{') {
+                int interpEnd = text.indexOf('}', curr + 2);
+                if (interpEnd != -1) {
+                    curr = interpEnd + 1;
+                    continue;
                 }
-            } else if (nestedDepth == 0 && text.startsWith("@elseif", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                String body = text.substring(bodyStart, curr);
-                branches.add(new Branch(currentCond, currentIsElse, body));
+            }
 
-                int nextCondOpen = text.indexOf('(', curr + 7);
-                int nextCondClose = findMatchingParen(text, nextCondOpen);
-                if (nextCondOpen == -1 || nextCondClose == -1) {
-                    throw new IllegalArgumentException("Malformed '@elseif' condition near index " + curr 
+            char c = text.charAt(curr);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return curr;
+                }
+            }
+            curr++;
+        }
+        return -1;
+    }
+
+    private static int findNextChar(String text, int start, char target) {
+        int len = text.length();
+        for (int i = start; i < len; i++) {
+            char c = text.charAt(i);
+            if (c == target) {
+                return i;
+            }
+            if (c == ':') continue;
+            if (!Character.isWhitespace(c)) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    private static int findNextNonWhitespace(String text, int start) {
+        int len = text.length();
+        for (int i = start; i < len; i++) {
+            if (!Character.isWhitespace(text.charAt(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static IfBlockResult parseIfBlockAt(JssrComponent component, String text, int startIdx) {
+        int len = text.length();
+        List<Branch> branches = new ArrayList<>();
+
+        int condOpen = text.indexOf('(', startIdx + 3);
+        int condClose = (condOpen != -1) ? findMatchingParen(text, condOpen) : -1;
+        if (condOpen == -1 || condClose == -1) {
+            throw new IllegalArgumentException("Malformed '@if' condition in directive starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName());
+        }
+        String firstCond = text.substring(condOpen + 1, condClose).trim();
+
+        int openBrace = findNextChar(text, condClose + 1, '{');
+        if (openBrace == -1) {
+            throw new IllegalArgumentException("Malformed '@if' block starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
+        }
+
+        int closeBrace = findMatchingBrace(text, openBrace);
+        if (closeBrace == -1) {
+            throw new IllegalArgumentException("Unclosed JSSR control flow directive '@if' in component " 
+                    + component.getClass().getSimpleName() + ". Expected matching '}'.");
+        }
+
+        String firstBody = text.substring(openBrace + 1, closeBrace);
+        branches.add(new Branch(firstCond, false, firstBody));
+
+        int curr = closeBrace + 1;
+        while (curr < len) {
+            int nextToken = findNextNonWhitespace(text, curr);
+            if (nextToken == -1) break;
+
+            if (text.startsWith("@elseif", nextToken) && isValidDirectiveBoundary(text, nextToken, 7)) {
+                int elseifCondOpen = text.indexOf('(', nextToken + 7);
+                int elseifCondClose = (elseifCondOpen != -1) ? findMatchingParen(text, elseifCondOpen) : -1;
+                if (elseifCondOpen == -1 || elseifCondClose == -1) {
+                    throw new IllegalArgumentException("Malformed '@elseif' condition near index " + nextToken 
                             + " in component " + component.getClass().getSimpleName());
                 }
-                currentCond = text.substring(nextCondOpen + 1, nextCondClose).trim();
-                currentIsElse = false;
-                curr = nextCondClose + 1;
-                bodyStart = curr;
-            } else if (nestedDepth == 0 && text.startsWith("@else", curr) && isValidDirectiveBoundary(text, curr, 5)) {
-                String body = text.substring(bodyStart, curr);
-                branches.add(new Branch(currentCond, currentIsElse, body));
+                String cond = text.substring(elseifCondOpen + 1, elseifCondClose).trim();
 
-                currentCond = null;
-                currentIsElse = true;
-                curr += 5;
-                bodyStart = curr;
+                int elseifOpenBrace = findNextChar(text, elseifCondClose + 1, '{');
+                if (elseifOpenBrace == -1) {
+                    throw new IllegalArgumentException("Malformed '@elseif' block near index " + nextToken 
+                            + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
+                }
+
+                int elseifCloseBrace = findMatchingBrace(text, elseifOpenBrace);
+                if (elseifCloseBrace == -1) {
+                    throw new IllegalArgumentException("Unclosed JSSR control flow directive '@elseif' in component " 
+                            + component.getClass().getSimpleName() + ". Expected matching '}'.");
+                }
+
+                String body = text.substring(elseifOpenBrace + 1, elseifCloseBrace);
+                branches.add(new Branch(cond, false, body));
+                curr = elseifCloseBrace + 1;
+            } else if (text.startsWith("@else", nextToken) && isValidDirectiveBoundary(text, nextToken, 5)) {
+                int elseOpenBrace = findNextChar(text, nextToken + 5, '{');
+                if (elseOpenBrace == -1) {
+                    throw new IllegalArgumentException("Malformed '@else' block near index " + nextToken 
+                            + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
+                }
+
+                int elseCloseBrace = findMatchingBrace(text, elseOpenBrace);
+                if (elseCloseBrace == -1) {
+                    throw new IllegalArgumentException("Unclosed JSSR control flow directive '@else' in component " 
+                            + component.getClass().getSimpleName() + ". Expected matching '}'.");
+                }
+
+                String body = text.substring(elseOpenBrace + 1, elseCloseBrace);
+                branches.add(new Branch(null, true, body));
+                curr = elseCloseBrace + 1;
+                break;
             } else {
-                curr++;
+                break;
             }
         }
 
-        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@if' in component " 
-                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+        return new IfBlockResult(branches, curr);
     }
 
     record ForBlockResult(String loopVar, String listExpr, String loopBody, String elseBody, boolean hasElse, int endIndex) {}
@@ -1173,7 +1262,7 @@ public interface JssrComponent {
     private static ForBlockResult parseForBlockAt(JssrComponent component, String text, int startIdx) {
         int len = text.length();
         int condOpen = text.indexOf('(', startIdx + 4);
-        int condClose = findMatchingParen(text, condOpen);
+        int condClose = (condOpen != -1) ? findMatchingParen(text, condOpen) : -1;
         if (condOpen == -1 || condClose == -1) {
             throw new IllegalArgumentException("Malformed '@for' condition in directive starting at index " + startIdx 
                     + " in component " + component.getClass().getSimpleName());
@@ -1182,381 +1271,129 @@ public interface JssrComponent {
         String header = text.substring(condOpen + 1, condClose).trim();
         String[] parts = header.split(":", 2);
         if (parts.length != 2) {
+            parts = header.split(" in ", 2);
+        }
+        if (parts.length != 2) {
             throw new IllegalArgumentException("Malformed '@for' header '" + header + "' (expected format: 'item : collection') in component " 
                     + component.getClass().getSimpleName());
         }
 
         String loopVar = parts[0].trim();
+        if (loopVar.contains(" ")) {
+            String[] tok = loopVar.split("\\s+");
+            loopVar = tok[tok.length - 1];
+        }
         String listExpr = parts[1].trim();
 
-        int curr = condClose + 1;
-        int loopBodyStart = curr;
-        String loopBody = "";
+        int openBrace = findNextChar(text, condClose + 1, '{');
+        if (openBrace == -1) {
+            throw new IllegalArgumentException("Malformed '@for' block starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
+        }
+
+        int closeBrace = findMatchingBrace(text, openBrace);
+        if (closeBrace == -1) {
+            throw new IllegalArgumentException("Unclosed JSSR control flow directive '@for' in component " 
+                    + component.getClass().getSimpleName() + ". Expected matching '}'.");
+        }
+
+        String loopBody = text.substring(openBrace + 1, closeBrace);
         String elseBody = "";
         boolean hasElse = false;
+        int curr = closeBrace + 1;
 
-        int nestedDepth = 0;
-
-        while (curr < len) {
-            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
-                int commentEnd = text.indexOf("-->", curr + 4);
-                if (commentEnd != -1) {
-                    curr = commentEnd + 3;
-                    continue;
-                }
+        int nextToken = findNextNonWhitespace(text, curr);
+        if (nextToken != -1 && text.startsWith("@else", nextToken) && isValidDirectiveBoundary(text, nextToken, 5)) {
+            int elseOpenBrace = findNextChar(text, nextToken + 5, '{');
+            if (elseOpenBrace == -1) {
+                throw new IllegalArgumentException("Malformed '@else' block in '@for' near index " + nextToken 
+                        + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
             }
-            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
-                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
-                if (scriptEnd != -1) {
-                    curr = scriptEnd + 9;
-                    continue;
-                }
+            int elseCloseBrace = findMatchingBrace(text, elseOpenBrace);
+            if (elseCloseBrace == -1) {
+                throw new IllegalArgumentException("Unclosed '@else' block in '@for' in component " 
+                        + component.getClass().getSimpleName() + ". Expected matching '}'.");
             }
-            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
-                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
-                if (styleEnd != -1) {
-                    curr = styleEnd + 8;
-                    continue;
-                }
-            }
-
-            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                nestedDepth++;
-                curr += 7;
-            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
-                nestedDepth++;
-                curr += 3;
-            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                if (nestedDepth > 0) {
-                    nestedDepth--;
-                    curr += 4;
-                } else {
-                    if (hasElse) {
-                        elseBody = text.substring(loopBodyStart, curr);
-                    } else {
-                        loopBody = text.substring(loopBodyStart, curr);
-                    }
-                    return new ForBlockResult(loopVar, listExpr, loopBody, elseBody, hasElse, curr + 4);
-                }
-            } else if (nestedDepth == 0 && text.startsWith("@else", curr) && isValidDirectiveBoundary(text, curr, 5)) {
-                loopBody = text.substring(loopBodyStart, curr);
-                hasElse = true;
-                curr += 5;
-                loopBodyStart = curr;
-            } else {
-                curr++;
-            }
+            elseBody = text.substring(elseOpenBrace + 1, elseCloseBrace);
+            hasElse = true;
+            curr = elseCloseBrace + 1;
         }
 
-        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@for' in component " 
-                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
-    }
-
-
-
-    private static int findNextControlFlowDirective(String text, int fromIdx) {
-        int len = text.length();
-        int curr = fromIdx;
-        while (curr < len) {
-            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
-                int commentEnd = text.indexOf("-->", curr + 4);
-                if (commentEnd != -1) {
-                    curr = commentEnd + 3;
-                    continue;
-                }
-            }
-            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
-                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
-                if (scriptEnd != -1) {
-                    curr = scriptEnd + 9;
-                    continue;
-                }
-            }
-            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
-                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
-                if (styleEnd != -1) {
-                    curr = styleEnd + 8;
-                    continue;
-                }
-            }
-
-            if ((text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3))
-                    || (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4))
-                    || (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7))
-                    || (text.startsWith("@case", curr) && isValidDirectiveBoundary(text, curr, 5))
-                    || (text.startsWith("@default", curr) && isValidDirectiveBoundary(text, curr, 8))
-                    || (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4))
-                    || (text.startsWith("@catch", curr) && isValidDirectiveBoundary(text, curr, 6))
-                    || (text.startsWith("@finally", curr) && isValidDirectiveBoundary(text, curr, 8))
-                    || (text.startsWith("@throw", curr) && isValidDirectiveBoundary(text, curr, 6))
-                    || (text.startsWith("@continue", curr) && isValidDirectiveBoundary(text, curr, 9))
-                    || (text.startsWith("@break", curr) && isValidDirectiveBoundary(text, curr, 6))) {
-                return curr;
-            }
-            curr++;
-        }
-        return -1;
-    }
-
-    private static void executeThrowDirective(JssrComponent component, Map<String, Object> localScope, String throwExpr) {
-        if (throwExpr == null || throwExpr.isBlank()) {
-            throw new RuntimeException("Template error triggered via @throw in component " + component.getClass().getSimpleName());
-        }
-
-        String trimmed = throwExpr.trim();
-
-        // 1. Instantiation syntax: @throw(new ExceptionClass("message"))
-        if (trimmed.startsWith("new ")) {
-            int openParen = trimmed.indexOf('(');
-            int closeParen = trimmed.lastIndexOf(')');
-            if (openParen != -1 && closeParen > openParen) {
-                String className = trimmed.substring(4, openParen).trim();
-                String argStr = trimmed.substring(openParen + 1, closeParen).trim();
-                Object argVal = null;
-                if ((argStr.startsWith("\"") && argStr.endsWith("\"")) || (argStr.startsWith("'") && argStr.endsWith("'"))) {
-                    argVal = argStr.substring(1, argStr.length() - 1);
-                } else if (!argStr.isBlank()) {
-                    PropertyResult res = resolveProperty(component, localScope, argStr);
-                    if (res.found()) {
-                        argVal = res.value();
-                    } else {
-                        argVal = argStr;
-                    }
-                }
-
-                Throwable instantiated = instantiateException(className, argVal);
-                if (instantiated != null) {
-                    if (instantiated instanceof RuntimeException re) {
-                        throw re;
-                    } else if (instantiated instanceof Error err) {
-                        throw err;
-                    } else {
-                        throw new RuntimeException(instantiated.getMessage(), instantiated);
-                    }
-                }
-            }
-        }
-
-        // 2. String literal syntax: @throw("error message")
-        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-            String msg = trimmed.substring(1, trimmed.length() - 1);
-            throw new RuntimeException(msg);
-        }
-
-        // 3. Property / Variable reference syntax: @throw(exVar)
-        PropertyResult propRes = resolveProperty(component, localScope, trimmed);
-        if (propRes.found()) {
-            Object val = propRes.value();
-            if (val instanceof Throwable t) {
-                if (t instanceof RuntimeException re) {
-                    throw re;
-                } else if (t instanceof Error err) {
-                    throw err;
-                }
-                throw new RuntimeException(t.getMessage(), t);
-            }
-            if (val != null) {
-                throw new RuntimeException(val.toString());
-            }
-        }
-
-        throw new RuntimeException(trimmed);
-    }
-
-    private static Throwable instantiateException(String className, Object arg) {
-        Class<?> clazz = resolveExceptionClass(className);
-        if (clazz == null || !Throwable.class.isAssignableFrom(clazz)) {
-            return null;
-        }
-
-        try {
-            if (arg != null) {
-                try {
-                    Constructor<?> ctor = clazz.getConstructor(arg.getClass());
-                    return (Throwable) ctor.newInstance(arg);
-                } catch (NoSuchMethodException ignored) {}
-
-                if (arg instanceof String) {
-                    try {
-                        Constructor<?> ctor = clazz.getConstructor(String.class);
-                        return (Throwable) ctor.newInstance(arg);
-                    } catch (NoSuchMethodException ignored) {}
-                }
-            }
-
-            try {
-                Constructor<?> ctor = clazz.getConstructor();
-                return (Throwable) ctor.newInstance();
-            } catch (NoSuchMethodException ignored) {}
-        } catch (Throwable ignored) {}
-
-        return null;
-    }
-
-    private static Class<?> resolveExceptionClass(String className) {
-        try {
-            return Class.forName(className);
-        } catch (ClassNotFoundException ignored) {}
-
-        if (!className.contains(".")) {
-            try {
-                return Class.forName("java.lang." + className);
-            } catch (ClassNotFoundException ignored) {}
-            try {
-                return Class.forName("java.io." + className);
-            } catch (ClassNotFoundException ignored) {}
-            try {
-                return Class.forName("java.util." + className);
-            } catch (ClassNotFoundException ignored) {}
-        }
-        return null;
+        return new ForBlockResult(loopVar, listExpr, loopBody, elseBody, hasElse, curr);
     }
 
     record TryBlockResult(String tryBody, String catchVar, String catchBody, boolean hasCatch, String finallyBody, boolean hasFinally, int endIndex) {}
 
     private static TryBlockResult parseTryBlockAt(JssrComponent component, String text, int startIdx) {
         int len = text.length();
-        int curr = startIdx + 4; // Skip "@try"
-        if (curr < len && text.charAt(curr) == ':') {
-            curr++;
+
+        int openBrace = findNextChar(text, startIdx + 4, '{');
+        if (openBrace == -1) {
+            throw new IllegalArgumentException("Malformed '@try' block starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName() + ". Expected '{'.");
         }
-        int currentBodyStart = curr;
-        String tryBody = "";
+
+        int closeBrace = findMatchingBrace(text, openBrace);
+        if (closeBrace == -1) {
+            throw new IllegalArgumentException("Unclosed JSSR control flow directive '@try' in component " 
+                    + component.getClass().getSimpleName() + ". Expected matching '}'.");
+        }
+
+        String tryBody = text.substring(openBrace + 1, closeBrace);
         String catchVar = null;
         String catchBody = "";
         boolean hasCatch = false;
         String finallyBody = "";
         boolean hasFinally = false;
-        int currentSection = 0; // 0 = try, 1 = catch, 2 = finally
-        int nestedDepth = 0;
 
+        int curr = closeBrace + 1;
         while (curr < len) {
-            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
-                int commentEnd = text.indexOf("-->", curr + 4);
-                if (commentEnd != -1) {
-                    curr = commentEnd + 3;
-                    continue;
-                }
-            }
-            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
-                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
-                if (scriptEnd != -1) {
-                    curr = scriptEnd + 9;
-                    continue;
-                }
-            }
-            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
-                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
-                if (styleEnd != -1) {
-                    curr = styleEnd + 8;
-                    continue;
-                }
-            }
+            int nextToken = findNextNonWhitespace(text, curr);
+            if (nextToken == -1) break;
 
-            if (text.startsWith("@try", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-                if (curr < len && text.charAt(curr) == ':') curr++;
-            } else if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                nestedDepth++;
-                curr += 7;
-            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
-                nestedDepth++;
-                curr += 3;
-            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                if (nestedDepth > 0) {
-                    nestedDepth--;
-                    curr += 4;
-                } else {
-                    if (currentSection == 0) {
-                        tryBody = text.substring(currentBodyStart, curr);
-                    } else if (currentSection == 1) {
-                        catchBody = text.substring(currentBodyStart, curr);
-                    } else if (currentSection == 2) {
-                        finallyBody = text.substring(currentBodyStart, curr);
-                    }
-                    return new TryBlockResult(tryBody, catchVar, catchBody, hasCatch, finallyBody, hasFinally, curr + 4);
-                }
-            } else if (nestedDepth == 0 && text.startsWith("@catch", curr) && isValidDirectiveBoundary(text, curr, 6)) {
-                tryBody = text.substring(currentBodyStart, curr);
+            if (text.startsWith("@catch", nextToken) && isValidDirectiveBoundary(text, nextToken, 6)) {
                 hasCatch = true;
-                currentSection = 1;
-                curr += 6;
-
-                if (curr < len && text.charAt(curr) == '(') {
-                    int parenClose = findMatchingParen(text, curr);
+                int afterCatch = nextToken + 6;
+                int parenOpen = findNextChar(text, afterCatch, '(');
+                int afterParen = afterCatch;
+                if (parenOpen != -1) {
+                    int parenClose = findMatchingParen(text, parenOpen);
                     if (parenClose != -1) {
-                        catchVar = text.substring(curr + 1, parenClose).trim();
-                        curr = parenClose + 1;
+                        catchVar = text.substring(parenOpen + 1, parenClose).trim();
+                        afterParen = parenClose + 1;
                     }
                 }
-                if (curr < len && text.charAt(curr) == ':') {
-                    curr++;
+
+                int catchOpenBrace = findNextChar(text, afterParen, '{');
+                if (catchOpenBrace == -1) {
+                    throw new IllegalArgumentException("Malformed '@catch' block near index " + nextToken + ". Expected '{'.");
                 }
-                currentBodyStart = curr;
-            } else if (nestedDepth == 0 && text.startsWith("@finally", curr) && isValidDirectiveBoundary(text, curr, 8)) {
-                if (currentSection == 0) {
-                    tryBody = text.substring(currentBodyStart, curr);
-                } else if (currentSection == 1) {
-                    catchBody = text.substring(currentBodyStart, curr);
+                int catchCloseBrace = findMatchingBrace(text, catchOpenBrace);
+                if (catchCloseBrace == -1) {
+                    throw new IllegalArgumentException("Unclosed '@catch' block near index " + nextToken);
                 }
+
+                catchBody = text.substring(catchOpenBrace + 1, catchCloseBrace);
+                curr = catchCloseBrace + 1;
+            } else if (text.startsWith("@finally", nextToken) && isValidDirectiveBoundary(text, nextToken, 8)) {
                 hasFinally = true;
-                currentSection = 2;
-                curr += 8;
-                if (curr < len && text.charAt(curr) == ':') {
-                    curr++;
+                int finallyOpenBrace = findNextChar(text, nextToken + 8, '{');
+                if (finallyOpenBrace == -1) {
+                    throw new IllegalArgumentException("Malformed '@finally' block near index " + nextToken + ". Expected '{'.");
                 }
-                currentBodyStart = curr;
+                int finallyCloseBrace = findMatchingBrace(text, finallyOpenBrace);
+                if (finallyCloseBrace == -1) {
+                    throw new IllegalArgumentException("Unclosed '@finally' block near index " + nextToken);
+                }
+
+                finallyBody = text.substring(finallyOpenBrace + 1, finallyCloseBrace);
+                curr = finallyCloseBrace + 1;
             } else {
-                curr++;
+                break;
             }
         }
 
-        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@try' in component " 
-                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
-    }
-
-    private static ControlFlowResult evaluateTryBlockResult(JssrComponent component, Map<String, Object> localScope, TryBlockResult tryResult) {
-        StringBuilder sb = new StringBuilder();
-        try {
-            ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, tryResult.tryBody());
-            String interpolated = interpolateVariables(component, localScope, flowRes.content());
-            sb.append(interpolated);
-        } catch (Exception e) {
-            if (tryResult.hasCatch()) {
-                Map<String, Object> catchScope = new HashMap<>(localScope);
-                String varName = (tryResult.catchVar() == null || tryResult.catchVar().isBlank()) ? "err" : tryResult.catchVar();
-                String rawMsg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-                String safeMsg = rawMsg.replace("${", "&#36;{");
-
-                catchScope.put(varName, e);
-                catchScope.put(varName + ".message", safeMsg);
-                catchScope.put("e", e);
-                catchScope.put("e.message", safeMsg);
-                catchScope.put("error", e);
-                catchScope.put("error.message", safeMsg);
-
-                ControlFlowResult flowRes = parseControlFlowBlocks(component, catchScope, tryResult.catchBody());
-                String interpolated = interpolateVariables(component, catchScope, flowRes.content());
-                sb.append(interpolated);
-            }
-        } finally {
-            if (tryResult.hasFinally()) {
-                ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, tryResult.finallyBody());
-                String interpolated = interpolateVariables(component, localScope, flowRes.content());
-                sb.append(interpolated);
-            }
-        }
-        return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
+        return new TryBlockResult(tryBody, catchVar, catchBody, hasCatch, finallyBody, hasFinally, curr);
     }
 
     record SwitchBlockResult(String switchExpr, List<SwitchCase> cases, SwitchCase defaultCase, boolean hasDefault, int endIndex) {}
@@ -1565,7 +1402,7 @@ public interface JssrComponent {
     private static SwitchBlockResult parseSwitchBlockAt(JssrComponent component, String text, int startIdx) {
         int len = text.length();
         int condOpen = text.indexOf('(', startIdx + 7);
-        int condClose = findMatchingParen(text, condOpen);
+        int condClose = (condOpen != -1) ? findMatchingParen(text, condOpen) : -1;
         if (condOpen == -1 || condClose == -1) {
             throw new IllegalArgumentException("Malformed '@switch' condition in directive starting at index " + startIdx 
                     + " in component " + component.getClass().getSimpleName());
@@ -1573,136 +1410,171 @@ public interface JssrComponent {
 
         String switchExpr = text.substring(condOpen + 1, condClose).trim();
 
-        int curr = condClose + 1;
+        int nextCharHeader = findNextNonWhitespace(text, condClose + 1);
+        int switchBodyStart;
+        int switchBodyEnd;
+        int endIdxAfterSwitch;
+        if (nextCharHeader != -1 && text.charAt(nextCharHeader) == '{') {
+            int closeBrace = findMatchingBrace(text, nextCharHeader);
+            if (closeBrace == -1) {
+                throw new IllegalArgumentException("Unclosed JSSR control flow directive '@switch' in component " 
+                        + component.getClass().getSimpleName() + ". Expected matching '}'.");
+            }
+            switchBodyStart = nextCharHeader + 1;
+            switchBodyEnd = closeBrace;
+            endIdxAfterSwitch = closeBrace + 1;
+        } else if (nextCharHeader != -1 && text.charAt(nextCharHeader) == ':') {
+            switchBodyStart = nextCharHeader + 1;
+            int endDirective = findNextControlFlowDirective(text, switchBodyStart);
+            while (endDirective != -1 && (text.startsWith("@case", endDirective) || text.startsWith("@default", endDirective))) {
+                endDirective = findNextControlFlowDirective(text, endDirective + 5);
+            }
+            if (endDirective != -1 && text.startsWith("@end", endDirective)) {
+                switchBodyEnd = endDirective;
+                endIdxAfterSwitch = endDirective + 4;
+            } else {
+                switchBodyEnd = len;
+                endIdxAfterSwitch = len;
+            }
+        } else {
+            throw new IllegalArgumentException("Malformed '@switch' block starting at index " + startIdx 
+                    + " in component " + component.getClass().getSimpleName() + ". Expected '{' or ':'.");
+        }
+
+        String switchBody = text.substring(switchBodyStart, switchBodyEnd);
         List<SwitchCase> cases = new ArrayList<>();
         SwitchCase defaultCase = null;
         boolean hasDefault = false;
 
-        String currentCaseExpr = null;
-        boolean currentIsDefault = false;
-        int currentBodyStart = -1;
-        int nestedDepth = 0;
+        int curr = 0;
+        int bodyLen = switchBody.length();
 
-        while (curr < len) {
-            if (curr + 4 <= len && text.startsWith("<!--", curr)) {
-                int commentEnd = text.indexOf("-->", curr + 4);
-                if (commentEnd != -1) {
-                    curr = commentEnd + 3;
-                    continue;
-                }
-            }
-            if (curr + 7 <= len && text.substring(curr, Math.min(curr + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
-                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", curr);
-                if (scriptEnd != -1) {
-                    curr = scriptEnd + 9;
-                    continue;
-                }
-            }
-            if (curr + 6 <= len && text.substring(curr, Math.min(curr + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
-                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", curr);
-                if (styleEnd != -1) {
-                    curr = styleEnd + 8;
-                    continue;
-                }
-            }
+        while (curr < bodyLen) {
+            int nextDirective = findNextControlFlowDirective(switchBody, curr);
+            if (nextDirective == -1) break;
 
-            if (text.startsWith("@switch", curr) && isValidDirectiveBoundary(text, curr, 7)) {
-                nestedDepth++;
-                curr += 7;
-            } else if (text.startsWith("@for", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                nestedDepth++;
-                curr += 4;
-            } else if (text.startsWith("@if", curr) && isValidDirectiveBoundary(text, curr, 3)) {
-                nestedDepth++;
-                curr += 3;
-            } else if (text.startsWith("@end", curr) && isValidDirectiveBoundary(text, curr, 4)) {
-                if (nestedDepth == 0) {
-                    if (currentBodyStart != -1) {
-                        String body = text.substring(currentBodyStart, curr);
-                        if (currentIsDefault) {
-                            defaultCase = new SwitchCase(null, body, true);
-                            hasDefault = true;
-                        } else {
-                            cases.add(new SwitchCase(currentCaseExpr, body, false));
-                        }
-                    }
-                    return new SwitchBlockResult(switchExpr, cases, defaultCase, hasDefault, curr + 4);
-                } else {
-                    nestedDepth--;
-                    curr += 4;
-                }
-            } else if (nestedDepth == 0 && text.startsWith("@case", curr) && isValidDirectiveBoundary(text, curr, 5)) {
-                if (currentBodyStart != -1) {
-                    String body = text.substring(currentBodyStart, curr);
-                    if (currentIsDefault) {
-                        defaultCase = new SwitchCase(null, body, true);
-                        hasDefault = true;
-                    } else {
-                        cases.add(new SwitchCase(currentCaseExpr, body, false));
-                    }
-                }
-
-                int caseCondOpen = text.indexOf('(', curr + 5);
-                int caseCondClose = findMatchingParen(text, caseCondOpen);
+            if (switchBody.startsWith("@case", nextDirective) && isValidDirectiveBoundary(switchBody, nextDirective, 5)) {
+                int caseCondOpen = switchBody.indexOf('(', nextDirective + 5);
+                int caseCondClose = (caseCondOpen != -1) ? findMatchingParen(switchBody, caseCondOpen) : -1;
                 if (caseCondOpen == -1 || caseCondClose == -1) {
-                    throw new IllegalArgumentException("Malformed '@case' condition near index " + curr 
+                    throw new IllegalArgumentException("Malformed '@case' condition near index " + nextDirective 
                             + " in component " + component.getClass().getSimpleName());
                 }
-                currentCaseExpr = text.substring(caseCondOpen + 1, caseCondClose).trim();
-                currentIsDefault = false;
-                curr = caseCondClose + 1;
-                currentBodyStart = curr;
-            } else if (nestedDepth == 0 && text.startsWith("@default", curr) && isValidDirectiveBoundary(text, curr, 8)) {
-                if (currentBodyStart != -1) {
-                    String body = text.substring(currentBodyStart, curr);
-                    if (currentIsDefault) {
-                        defaultCase = new SwitchCase(null, body, true);
-                        hasDefault = true;
-                    } else {
-                        cases.add(new SwitchCase(currentCaseExpr, body, false));
-                    }
-                }
+                String caseExpr = switchBody.substring(caseCondOpen + 1, caseCondClose).trim();
 
-                currentCaseExpr = null;
-                currentIsDefault = true;
-                curr += 8;
-                currentBodyStart = curr;
+                int nextChar = findNextNonWhitespace(switchBody, caseCondClose + 1);
+                if (nextChar != -1 && switchBody.charAt(nextChar) == '{') {
+                    int caseCloseBrace = findMatchingBrace(switchBody, nextChar);
+                    if (caseCloseBrace == -1) {
+                        throw new IllegalArgumentException("Unclosed '@case' block in '@switch' near index " + nextDirective);
+                    }
+                    String caseBody = switchBody.substring(nextChar + 1, caseCloseBrace);
+                    cases.add(new SwitchCase(caseExpr, caseBody, false));
+                    curr = caseCloseBrace + 1;
+                } else if (nextChar != -1 && switchBody.charAt(nextChar) == ':') {
+                    int startBlock = nextChar + 1;
+                    int nextCase = findNextCaseOrDefaultOrEnd(switchBody, startBlock);
+                    int endBlock = (nextCase != -1) ? nextCase : bodyLen;
+                    String caseBody = switchBody.substring(startBlock, endBlock);
+                    cases.add(new SwitchCase(caseExpr, caseBody, false));
+                    curr = endBlock;
+                } else {
+                    throw new IllegalArgumentException("Malformed '@case' block near index " + nextDirective + ". Expected '{' or ':'.");
+                }
+            } else if (switchBody.startsWith("@default", nextDirective) && isValidDirectiveBoundary(switchBody, nextDirective, 8)) {
+                int nextChar = findNextNonWhitespace(switchBody, nextDirective + 8);
+                if (nextChar != -1 && switchBody.charAt(nextChar) == '{') {
+                    int defaultCloseBrace = findMatchingBrace(switchBody, nextChar);
+                    if (defaultCloseBrace == -1) {
+                        throw new IllegalArgumentException("Unclosed '@default' block in '@switch'.");
+                    }
+                    String defaultBody = switchBody.substring(nextChar + 1, defaultCloseBrace);
+                    defaultCase = new SwitchCase(null, defaultBody, true);
+                    hasDefault = true;
+                    curr = defaultCloseBrace + 1;
+                } else if (nextChar != -1 && switchBody.charAt(nextChar) == ':') {
+                    int startBlock = nextChar + 1;
+                    int nextCase = findNextCaseOrDefaultOrEnd(switchBody, startBlock);
+                    int endBlock = (nextCase != -1) ? nextCase : bodyLen;
+                    String defaultBody = switchBody.substring(startBlock, endBlock);
+                    defaultCase = new SwitchCase(null, defaultBody, true);
+                    hasDefault = true;
+                    curr = endBlock;
+                } else {
+                    throw new IllegalArgumentException("Malformed '@default' block in '@switch'. Expected '{' or ':'.");
+                }
             } else {
-                curr++;
+                curr = nextDirective + 1;
             }
         }
 
-        throw new IllegalArgumentException("Unclosed JSSR control flow directive '@switch' in component " 
-                + component.getClass().getSimpleName() + ". Expected matching '@end'.");
+        return new SwitchBlockResult(switchExpr, cases, defaultCase, hasDefault, endIdxAfterSwitch);
+    }
+
+    private static int findNextCaseOrDefaultOrEnd(String text, int fromIdx) {
+        int curr = fromIdx;
+        int len = text.length();
+        while (curr < len) {
+            int next = text.indexOf('@', curr);
+            if (next == -1) return -1;
+            if ((text.startsWith("@case", next) && isValidDirectiveBoundary(text, next, 5))
+             || (text.startsWith("@default", next) && isValidDirectiveBoundary(text, next, 8))
+             || (text.startsWith("@end", next) && isValidDirectiveBoundary(text, next, 4))) {
+                return next;
+            }
+            curr = next + 1;
+        }
+        return -1;
     }
 
     private static ControlFlowResult evaluateSwitchBlockResult(JssrComponent component, Map<String, Object> localScope, SwitchBlockResult switchResult) {
-        PropertyResult switchRes = resolveProperty(component, localScope, switchResult.switchExpr);
-        Object switchVal = switchRes.value();
+        Object switchVal;
+        String expr = switchResult.switchExpr.trim();
+        if (expr.startsWith("typeof(") && expr.endsWith(")")) {
+            String targetPath = expr.substring(7, expr.length() - 1).trim();
+            Object targetObj = getPropertyValueOrNull(component, localScope, targetPath);
+            switchVal = targetObj != null ? targetObj.getClass().getSimpleName() : "null";
+        } else {
+            PropertyResult switchRes = resolveProperty(component, localScope, expr);
+            switchVal = switchRes.value();
+        }
         String switchValStr = switchVal == null ? "null" : String.valueOf(switchVal);
+
+        StringBuilder sb = new StringBuilder();
+        boolean fallthrough = false;
+        boolean matchedAny = false;
 
         for (SwitchCase sc : switchResult.cases) {
             String caseValExpr = sc.caseExpr();
             String caseValClean = cleanCaseLiteral(caseValExpr);
 
-            if (switchValStr.equalsIgnoreCase(caseValClean) || switchValStr.equals(caseValExpr)) {
+            if (fallthrough || switchValStr.equalsIgnoreCase(caseValClean) || switchValStr.equals(caseValExpr)) {
+                fallthrough = true;
+                matchedAny = true;
                 ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, sc.body());
+                String interpolated = interpolateVariables(component, localScope, flowRes.content());
+                sb.append(interpolated);
+
                 if (flowRes.signal() == LoopSignal.BREAK) {
-                    return new ControlFlowResult(flowRes.content(), LoopSignal.NONE);
+                    return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
+                } else if (flowRes.signal() != LoopSignal.NONE) {
+                    return new ControlFlowResult(sb.toString(), flowRes.signal());
                 }
-                return flowRes;
             }
         }
 
-        if (switchResult.hasDefault()) {
+        if ((fallthrough || !matchedAny) && switchResult.hasDefault()) {
             ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, switchResult.defaultCase().body());
+            String interpolated = interpolateVariables(component, localScope, flowRes.content());
+            sb.append(interpolated);
             if (flowRes.signal() == LoopSignal.BREAK) {
-                return new ControlFlowResult(flowRes.content(), LoopSignal.NONE);
+                return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
+            } else if (flowRes.signal() != LoopSignal.NONE) {
+                return new ControlFlowResult(sb.toString(), flowRes.signal());
             }
-            return flowRes;
         }
 
-        return new ControlFlowResult("", LoopSignal.NONE);
+        return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
     }
 
     private static String cleanCaseLiteral(String expr) {
@@ -1802,10 +1674,135 @@ public interface JssrComponent {
         return (text.startsWith("@if", idx) && isValidDirectiveBoundary(text, idx, 3))
             || (text.startsWith("@for", idx) && isValidDirectiveBoundary(text, idx, 4))
             || (text.startsWith("@switch", idx) && isValidDirectiveBoundary(text, idx, 7))
+            || (text.startsWith("@case", idx) && isValidDirectiveBoundary(text, idx, 5))
+            || (text.startsWith("@default", idx) && isValidDirectiveBoundary(text, idx, 8))
             || (text.startsWith("@try", idx) && isValidDirectiveBoundary(text, idx, 4))
+            || (text.startsWith("@catch", idx) && isValidDirectiveBoundary(text, idx, 6))
+            || (text.startsWith("@finally", idx) && isValidDirectiveBoundary(text, idx, 8))
+            || (text.startsWith("@elseif", idx) && isValidDirectiveBoundary(text, idx, 7))
+            || (text.startsWith("@else", idx) && isValidDirectiveBoundary(text, idx, 5))
             || (text.startsWith("@throw", idx) && isValidDirectiveBoundary(text, idx, 6))
             || (text.startsWith("@continue", idx) && isValidDirectiveBoundary(text, idx, 9))
             || (text.startsWith("@break", idx) && isValidDirectiveBoundary(text, idx, 6));
+    }
+
+    private static int findNextControlFlowDirective(String text, int start) {
+        int len = text.length();
+        int i = start;
+        while (i < len) {
+            if (i + 4 <= len && text.startsWith("<!--", i)) {
+                int commentEnd = text.indexOf("-->", i + 4);
+                if (commentEnd != -1) {
+                    i = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (i + 7 <= len && text.substring(i, Math.min(i + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = text.toLowerCase(Locale.ROOT).indexOf("</script>", i);
+                if (scriptEnd != -1) {
+                    i = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (i + 6 <= len && text.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = text.toLowerCase(Locale.ROOT).indexOf("</style>", i);
+                if (styleEnd != -1) {
+                    i = styleEnd + 8;
+                    continue;
+                }
+            }
+            if (text.charAt(i) == '@' && isDirectiveAt(text, i)) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    private static void executeThrowDirective(JssrComponent component, Map<String, Object> localScope, String throwExpr) {
+        if (throwExpr != null && throwExpr.trim().startsWith("new ")) {
+            String expr = throwExpr.trim().substring(4).trim();
+            int parenOpen = expr.indexOf('(');
+            int parenClose = expr.lastIndexOf(')');
+            if (parenOpen != -1 && parenClose != -1) {
+                String className = expr.substring(0, parenOpen).trim();
+                String arg = expr.substring(parenOpen + 1, parenClose).trim();
+                if ((arg.startsWith("\"") && arg.endsWith("\"")) || (arg.startsWith("'") && arg.endsWith("'"))) {
+                    arg = arg.substring(1, arg.length() - 1);
+                }
+                try {
+                    Class<?> clazz;
+                    try {
+                        clazz = Class.forName(className);
+                    } catch (ClassNotFoundException cnfe) {
+                        clazz = Class.forName("java.lang." + className);
+                    }
+                    Throwable t = (Throwable) clazz.getConstructor(String.class).newInstance(arg);
+                    if (t instanceof RuntimeException re) throw re;
+                    if (t instanceof Error err) throw err;
+                    throw new RuntimeException(t);
+                } catch (RuntimeException re) {
+                    throw re;
+                } catch (Error err) {
+                    throw err;
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        }
+
+        String message = "Manual @throw in template execution";
+        if (throwExpr != null && !throwExpr.isBlank()) {
+            if ((throwExpr.startsWith("\"") && throwExpr.endsWith("\"")) || (throwExpr.startsWith("'") && throwExpr.endsWith("'"))) {
+                message = throwExpr.substring(1, throwExpr.length() - 1);
+            } else {
+                PropertyResult res = resolveProperty(component, localScope, throwExpr);
+                if (res.value() != null) {
+                    message = String.valueOf(res.value());
+                }
+            }
+        }
+        throw new RuntimeException(message);
+    }
+
+    private static ControlFlowResult evaluateTryBlockResult(JssrComponent component, Map<String, Object> localScope, TryBlockResult tryResult) {
+        StringBuilder sb = new StringBuilder();
+        LoopSignal signal = LoopSignal.NONE;
+        try {
+            ControlFlowResult tryRes = parseControlFlowBlocks(component, localScope, tryResult.tryBody);
+            String interpolated = interpolateVariables(component, localScope, tryRes.content());
+            sb.append(interpolated);
+            signal = tryRes.signal();
+        } catch (Throwable e) {
+            if (e instanceof OutOfMemoryError || e instanceof StackOverflowError || e instanceof LinkageError) {
+                throw e;
+            }
+            if (tryResult.hasCatch) {
+                Map<String, Object> catchScope = new HashMap<>(localScope);
+                String catchVar = tryResult.catchVar != null && !tryResult.catchVar.isBlank() ? tryResult.catchVar : "e";
+                String rawMsg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                String safeMsg = rawMsg.replace("${", "&#36;{");
+                catchScope.put(catchVar, e);
+                catchScope.put(catchVar + ".message", safeMsg);
+                catchScope.put("err", e);
+                catchScope.put("err.message", safeMsg);
+
+                ControlFlowResult catchRes = parseControlFlowBlocks(component, catchScope, tryResult.catchBody);
+                String interpolated = interpolateVariables(component, catchScope, catchRes.content());
+                sb.append(interpolated);
+                signal = catchRes.signal();
+            }
+        } finally {
+            if (tryResult.hasFinally) {
+                ControlFlowResult finallyRes = parseControlFlowBlocks(component, localScope, tryResult.finallyBody);
+                String interpolated = interpolateVariables(component, localScope, finallyRes.content());
+                sb.append(interpolated);
+                if (finallyRes.signal() != LoopSignal.NONE) {
+                    signal = finallyRes.signal();
+                }
+            }
+        }
+        return new ControlFlowResult(sb.toString(), signal);
     }
 
     private static int findMatchingParen(String text, int openIdx) {
@@ -2035,9 +2032,9 @@ public interface JssrComponent {
 
             if (quoteChar == 0 && activeAttr.isEmpty()) {
                 if (val instanceof BooleanAttribute ba) {
-                    return ba.template();
+                    return ba.render();
                 } else if (val instanceof HtmlAttribute ha) {
-                    return ha.template();
+                    return ha.render();
                 } else if (valType == boolean.class || valType == Boolean.class || val instanceof Boolean) {
                     boolean boolVal = val != null && (Boolean) val;
                     String attrName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;

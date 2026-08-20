@@ -37,7 +37,7 @@ class TemplateParserTest {
     @Test
     @DisplayName("Verify parsing @if directive AST structure")
     void testParseIfDirective() {
-        String tpl = "@if (active)<span>Active</span>@else<span>Inactive</span>@end";
+        String tpl = "@if (active) { <span>Active</span> } @else { <span>Inactive</span> }";
         List<TemplateNode> ast = TemplateParser.parse(tpl);
 
         assertEquals(1, ast.size());
@@ -52,7 +52,7 @@ class TemplateParserTest {
     @Test
     @DisplayName("Verify parsing @for directive AST structure")
     void testParseForDirective() {
-        String tpl = "@for (user : users)<li>${user.name}</li>@end";
+        String tpl = "@for (user : users) { <li>${user.name}</li> }";
         List<TemplateNode> ast = TemplateParser.parse(tpl);
 
         assertEquals(1, ast.size());

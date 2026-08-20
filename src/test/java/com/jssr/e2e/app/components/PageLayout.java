@@ -6,15 +6,15 @@ import com.jssr.core.RawHtml;
 public record PageLayout(String title, RawHtml contentHtml, RawHtml formModalHtml) implements JssrComponent {
 
     public PageLayout(String title, String contentHtml) {
-        this(title, RawHtml.of(contentHtml), RawHtml.of(new UserForm().render()));
+        this(title, RawHtml.of(contentHtml), RawHtml.of(JssrComponent.render(new UserForm())));
     }
 
     public PageLayout(String title, RawHtml contentHtml) {
-        this(title, contentHtml, RawHtml.of(new UserForm().render()));
+        this(title, contentHtml, RawHtml.of(JssrComponent.render(new UserForm())));
     }
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <!DOCTYPE html>
             <html lang="en" class="h-full bg-slate-950">

@@ -33,16 +33,16 @@ public class PrecompiledControlFlowTest {
 
     public record UserBadgeCard(Object user) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="badge">
-                    @if (user instanceof com.jssr.core.PrecompiledControlFlowTest$AdminUser admin):
+                    @if (user instanceof com.jssr.core.PrecompiledControlFlowTest$AdminUser admin) {
                         <span class="admin">Admin: ${admin.name} (${admin.role})</span>
-                    @elseif (user instanceof com.jssr.core.PrecompiledControlFlowTest$RegularUser reg):
+                    } @elseif (user instanceof com.jssr.core.PrecompiledControlFlowTest$RegularUser reg) {
                         <span class="user">User: ${reg.name}</span>
-                    @else:
+                    } @else {
                         <span class="guest">Guest</span>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -50,14 +50,14 @@ public class PrecompiledControlFlowTest {
 
     public record TaskListCard(List<String> tasks) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <ul>
-                    @for (t : tasks):
+                    @for (t : tasks) {
                         <li>${t}</li>
-                    @else:
+                    } @else {
                         <li class="empty">No tasks</li>
-                    @end
+                    }
                 </ul>
                 """;
         }
@@ -65,18 +65,18 @@ public class PrecompiledControlFlowTest {
 
     public record LoopControlCard(List<Integer> numbers) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @for (n : numbers):
-                        @if (n < 0):
+                    @for (n : numbers) {
+                        @if (n < 0) {
                             @continue
-                        @end
-                        @if (n > 10):
+                        }
+                        @if (n > 10) {
                             @break
-                        @end
+                        }
                         <span>${n}</span>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -84,20 +84,20 @@ public class PrecompiledControlFlowTest {
 
     public record ErrorBoundaryCard(boolean triggerFault) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @try:
-                        @if (triggerFault):
+                    @try {
+                        @if (triggerFault) {
                             @throw("Intentional template error")
-                        @else:
+                        } @else {
                             <p>All normal</p>
-                        @end
-                    @catch(err):
+                        }
+                    } @catch(err) {
                         <p class="error">Caught: ${err.message}</p>
-                    @finally:
+                    } @finally {
                         <p class="footer">Done</p>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -107,16 +107,16 @@ public class PrecompiledControlFlowTest {
     @DisplayName("Verify @if instanceof pattern matching under precompiled JVM bytecode rendering")
     void testPrecompiledIfInstanceof() {
         UserBadgeCard adminCard = new UserBadgeCard(new AdminUser("Alice", "SuperAdmin"));
-        String adminHtml = adminCard.render();
+        String adminHtml = adminCard.renderPrecompiled();
         assertTrue(adminHtml.contains("Admin: Alice (SuperAdmin)"));
         assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(UserBadgeCard.class));
 
         UserBadgeCard userCard = new UserBadgeCard(new RegularUser("Bob"));
-        String userHtml = userCard.render();
+        String userHtml = userCard.renderPrecompiled();
         assertTrue(userHtml.contains("User: Bob"));
 
         UserBadgeCard guestCard = new UserBadgeCard("UnknownGuest");
-        String guestHtml = guestCard.render();
+        String guestHtml = guestCard.renderPrecompiled();
         assertTrue(guestHtml.contains("Guest"));
     }
 
@@ -124,13 +124,13 @@ public class PrecompiledControlFlowTest {
     @DisplayName("Verify @for loop iteration and @else fallbacks under precompiled JVM bytecode rendering")
     void testPrecompiledForLoop() {
         TaskListCard activeTasks = new TaskListCard(List.of("Deploy App", "Run Security Scan"));
-        String activeHtml = activeTasks.render();
+        String activeHtml = activeTasks.renderPrecompiled();
         assertTrue(activeHtml.contains("<li>Deploy App</li>"));
         assertTrue(activeHtml.contains("<li>Run Security Scan</li>"));
         assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(TaskListCard.class));
 
         TaskListCard emptyTasks = new TaskListCard(List.of());
-        String emptyHtml = emptyTasks.render();
+        String emptyHtml = emptyTasks.renderPrecompiled();
         assertTrue(emptyHtml.contains("<li class=\"empty\">No tasks</li>"));
     }
 
@@ -138,7 +138,7 @@ public class PrecompiledControlFlowTest {
     @DisplayName("Verify @continue and @break directives under precompiled JVM bytecode rendering")
     void testPrecompiledLoopControlDirectives() {
         LoopControlCard card = new LoopControlCard(List.of(-1, 2, -5, 4, 15, 6));
-        String html = card.render();
+        String html = card.renderPrecompiled();
         assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(LoopControlCard.class),
                 "LoopControlCard must achieve COMPILED status without unreachable statement compilation errors");
         assertFalse(html.contains("<span>-1</span>"));
@@ -153,14 +153,14 @@ public class PrecompiledControlFlowTest {
     @DisplayName("Verify @try/@catch/@finally error boundaries under precompiled JVM bytecode rendering")
     void testPrecompiledErrorBoundary() {
         ErrorBoundaryCard normal = new ErrorBoundaryCard(false);
-        String normalHtml = normal.render();
+        String normalHtml = normal.renderPrecompiled();
         assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(ErrorBoundaryCard.class),
                 "ErrorBoundaryCard must achieve COMPILED status without unreachable statement compilation errors");
         assertTrue(normalHtml.contains("<p>All normal</p>"));
         assertTrue(normalHtml.contains("<p class=\"footer\">Done</p>"));
 
         ErrorBoundaryCard fault = new ErrorBoundaryCard(true);
-        String faultHtml = fault.render();
+        String faultHtml = fault.renderPrecompiled();
         assertTrue(faultHtml.contains("Caught: Intentional template error"));
         assertTrue(faultHtml.contains("<p class=\"footer\">Done</p>"));
     }

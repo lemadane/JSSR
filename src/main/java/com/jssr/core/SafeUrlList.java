@@ -42,13 +42,9 @@ public record SafeUrlList(String value) implements JssrComponent {
         return String.join(" ", sanitizedList);
     }
 
+    @Override
     public String render() {
         return sanitize(value);
-    }
-
-    @Override
-    public String template() {
-        return render();
     }
 
     @Override

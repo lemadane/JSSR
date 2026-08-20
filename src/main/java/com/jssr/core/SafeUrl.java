@@ -60,7 +60,7 @@ public record SafeUrl(String value) implements JssrComponent {
     }
 
     @Override
-    public String template() {
+    public String render() {
         return sanitize(value);
     }
 

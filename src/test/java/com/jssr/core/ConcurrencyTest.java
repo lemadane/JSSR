@@ -14,14 +14,14 @@ class ConcurrencyTest {
 
     public record TestCard(String username, int count) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"user-card\"><h3>${username}</h3><span>${count}</span></div>";
         }
     }
 
     public record ContainerPage(TestCard card) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<main>${card}</main>";
         }
     }
@@ -56,7 +56,7 @@ class ConcurrencyTest {
                 for (int j = 0; j < iterationsPerThread; j++) {
                     TestCard card = new TestCard("User-" + threadId, j);
                     ContainerPage page = new ContainerPage(card);
-                    String html = page.render();
+                    String html = JssrComponent.render(page);
                     results.add(html);
                 }
                 doneLatch.countDown();
@@ -92,7 +92,7 @@ class ConcurrencyTest {
 
         long startTime = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            String html = card.render();
+            String html = JssrComponent.render(card);
             assertNotNull(html);
         }
         long durationMs = (System.nanoTime() - startTime) / 1_000_000;

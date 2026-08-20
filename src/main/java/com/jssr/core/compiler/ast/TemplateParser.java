@@ -238,6 +238,73 @@ public final class TemplateParser {
         return nodes;
     }
 
+    private static int findMatchingBrace(String s, int openBrace) {
+        if (openBrace == -1 || openBrace >= s.length() || s.charAt(openBrace) != '{') return -1;
+        int depth = 1;
+        int len = s.length();
+        int i = openBrace + 1;
+        while (i < len) {
+            if (i + 4 <= len && s.startsWith("<!--", i)) {
+                int commentEnd = s.indexOf("-->", i + 4);
+                if (commentEnd != -1) {
+                    i = commentEnd + 3;
+                    continue;
+                }
+            }
+            if (i + 7 <= len && s.substring(i, Math.min(i + 8, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
+                int scriptEnd = s.toLowerCase(Locale.ROOT).indexOf("</script>", i);
+                if (scriptEnd != -1) {
+                    i = scriptEnd + 9;
+                    continue;
+                }
+            }
+            if (i + 6 <= len && s.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<style")) {
+                int styleEnd = s.toLowerCase(Locale.ROOT).indexOf("</style>", i);
+                if (styleEnd != -1) {
+                    i = styleEnd + 8;
+                    continue;
+                }
+            }
+
+            if (i + 1 < len && s.charAt(i) == '$' && s.charAt(i + 1) == '{') {
+                int interpEnd = s.indexOf('}', i + 2);
+                if (interpEnd != -1) {
+                    i = interpEnd + 1;
+                    continue;
+                }
+            }
+
+            char c = s.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    private static int findNextChar(String s, int start, char target) {
+        int len = s.length();
+        for (int i = start; i < len; i++) {
+            char c = s.charAt(i);
+            if (c == target) return i;
+            if (c == ':') continue;
+            if (!Character.isWhitespace(c)) return -1;
+        }
+        return -1;
+    }
+
+    private static int findNextNonWhitespace(String s, int start) {
+        int len = s.length();
+        for (int i = start; i < len; i++) {
+            if (!Character.isWhitespace(s.charAt(i))) return i;
+        }
+        return -1;
+    }
+
     private static int parseIfDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
         int openParen = s.indexOf('(', pos);
         int closeParen = findMatchingParen(s, openParen);
@@ -247,93 +314,41 @@ public final class TemplateParser {
         }
 
         String mainCond = s.substring(openParen + 1, closeParen).trim();
-        int bodyStart = closeParen + 1;
-        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+        int openBrace = findNextChar(s, closeParen + 1, '{');
+        if (openBrace == -1 || openBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@if"));
+            return pos + 3;
+        }
 
-        int bodyEnd = findMatchingEnd(s, bodyStart, limit);
+        int closeBrace = findMatchingBrace(s, openBrace);
+        if (closeBrace == -1 || closeBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@if"));
+            return pos + 3;
+        }
 
-        String fullBody = s.substring(bodyStart, bodyEnd);
-        List<Branch> branches = parseIfBranches(fullBody);
+        List<TemplateNode> thenNodes = parseBlock(s, openBrace + 1, closeBrace, loopDepth);
 
-        TemplateNode.IfNode ifNode = buildIfTree(mainCond, branches, loopDepth);
-        nodes.add(ifNode);
+        int curr = closeBrace + 1;
+        List<TemplateNode> elseNodes = Collections.emptyList();
 
-        return bodyEnd + 4; // skip "@end"
-    }
-
-    private record Branch(String cond, String body) {}
-
-    private static List<Branch> parseIfBranches(String body) {
-        List<Branch> branches = new ArrayList<>();
-        int len = body.length();
-        int currentBodyStart = 0;
-        String currentCond = null;
-        int depth = 0;
-        int i = 0;
-
-        while (i < len) {
-            if (body.startsWith("@if", i) || body.startsWith("@for", i) || body.startsWith("@switch", i) || body.startsWith("@try", i)) {
-                depth++;
-                i++;
-            } else if (body.startsWith("@end", i)) {
-                if (depth > 0) depth--;
-                i += 4;
-            } else if (depth == 0) {
-                if (body.startsWith("@elseif", i) && isWordBoundary(body, i + 7)) {
-                    String subBody = body.substring(currentBodyStart, i);
-                    branches.add(new Branch(currentCond, subBody));
-
-                    int openParen = body.indexOf('(', i);
-                    int closeParen = findMatchingParen(body, openParen);
-                    currentCond = body.substring(openParen + 1, closeParen).trim();
-                    currentBodyStart = closeParen + 1;
-                    if (currentBodyStart < len && body.charAt(currentBodyStart) == ':') currentBodyStart++;
-                    i = currentBodyStart;
-                } else if (body.startsWith("@else", i) && isWordBoundary(body, i + 5)) {
-                    String subBody = body.substring(currentBodyStart, i);
-                    branches.add(new Branch(currentCond, subBody));
-
-                    currentCond = null;
-                    currentBodyStart = i + 5;
-                    if (currentBodyStart < len && body.charAt(currentBodyStart) == ':') currentBodyStart++;
-                    i = currentBodyStart;
-                } else {
-                    i++;
+        int nextToken = findNextNonWhitespace(s, curr);
+        if (nextToken != -1 && nextToken < limit && s.startsWith("@elseif", nextToken) && isWordBoundary(s, nextToken + 7)) {
+            List<TemplateNode> elseifNodes = new ArrayList<>();
+            curr = parseIfDirective(s, nextToken, limit, elseifNodes, loopDepth);
+            elseNodes = elseifNodes;
+        } else if (nextToken != -1 && nextToken < limit && s.startsWith("@else", nextToken) && isWordBoundary(s, nextToken + 5)) {
+            int elseOpenBrace = findNextChar(s, nextToken + 5, '{');
+            if (elseOpenBrace != -1 && elseOpenBrace < limit) {
+                int elseCloseBrace = findMatchingBrace(s, elseOpenBrace);
+                if (elseCloseBrace != -1 && elseCloseBrace <= limit) {
+                    elseNodes = parseBlock(s, elseOpenBrace + 1, elseCloseBrace, loopDepth);
+                    curr = elseCloseBrace + 1;
                 }
-            } else {
-                i++;
             }
         }
 
-        String finalBody = body.substring(currentBodyStart);
-        branches.add(new Branch(currentCond, finalBody));
-
-        return branches;
-    }
-
-    private static TemplateNode.IfNode buildIfTree(String mainCond, List<Branch> branches, int loopDepth) {
-        if (branches.isEmpty()) {
-            return new TemplateNode.IfNode(mainCond, Collections.emptyList(), Collections.emptyList());
-        }
-
-        Branch mainBranch = branches.get(0);
-        List<TemplateNode> thenNodes = parseBlock(mainBranch.body(), 0, mainBranch.body().length(), loopDepth);
-
-        if (branches.size() == 1) {
-            return new TemplateNode.IfNode(mainCond, thenNodes, Collections.emptyList());
-        }
-
-        List<Branch> remaining = branches.subList(1, branches.size());
-        Branch next = remaining.get(0);
-
-        List<TemplateNode> elseNodes;
-        if (next.cond() != null) {
-            elseNodes = List.of(buildIfTree(next.cond(), remaining, loopDepth));
-        } else {
-            elseNodes = parseBlock(next.body(), 0, next.body().length(), loopDepth);
-        }
-
-        return new TemplateNode.IfNode(mainCond, thenNodes, elseNodes);
+        nodes.add(new TemplateNode.IfNode(mainCond, thenNodes, elseNodes));
+        return curr;
     }
 
     private static int parseForDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
@@ -356,125 +371,101 @@ public final class TemplateParser {
             item = parts[0].trim();
             collection = parts[1].trim();
         }
+        if (item.contains(" ")) {
+            String[] itemTokens = item.split("\\s+");
+            item = itemTokens[itemTokens.length - 1];
+        }
 
-        int bodyStart = closeParen + 1;
-        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+        int openBrace = findNextChar(s, closeParen + 1, '{');
+        if (openBrace == -1 || openBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@for"));
+            return pos + 4;
+        }
 
-        int bodyEnd = findMatchingEnd(s, bodyStart, limit);
+        int closeBrace = findMatchingBrace(s, openBrace);
+        if (closeBrace == -1 || closeBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@for"));
+            return pos + 4;
+        }
 
-        String fullBody = s.substring(bodyStart, bodyEnd);
-        int elseIdx = findTopLevelElse(fullBody);
+        List<TemplateNode> bodyNodes = parseBlock(s, openBrace + 1, closeBrace, loopDepth + 1);
+        List<TemplateNode> elseNodes = Collections.emptyList();
+        int curr = closeBrace + 1;
 
-        List<TemplateNode> bodyNodes;
-        List<TemplateNode> elseNodes;
-
-        if (elseIdx != -1) {
-            int elseBodyStart = elseIdx + 5;
-            if (elseBodyStart < fullBody.length() && fullBody.charAt(elseBodyStart) == ':') elseBodyStart++;
-            bodyNodes = parseBlock(fullBody.substring(0, elseIdx), 0, elseIdx, loopDepth + 1);
-            elseNodes = parseBlock(fullBody.substring(elseBodyStart), 0, fullBody.length() - elseBodyStart, loopDepth);
-        } else {
-            bodyNodes = parseBlock(fullBody, 0, fullBody.length(), loopDepth + 1);
-            elseNodes = Collections.emptyList();
+        int nextToken = findNextNonWhitespace(s, curr);
+        if (nextToken != -1 && nextToken < limit && s.startsWith("@else", nextToken) && isWordBoundary(s, nextToken + 5)) {
+            int elseOpenBrace = findNextChar(s, nextToken + 5, '{');
+            if (elseOpenBrace != -1 && elseOpenBrace < limit) {
+                int elseCloseBrace = findMatchingBrace(s, elseOpenBrace);
+                if (elseCloseBrace != -1 && elseCloseBrace <= limit) {
+                    elseNodes = parseBlock(s, elseOpenBrace + 1, elseCloseBrace, loopDepth);
+                    curr = elseCloseBrace + 1;
+                }
+            }
         }
 
         nodes.add(new TemplateNode.ForNode(item, collection, bodyNodes, elseNodes));
-        return bodyEnd + 4;
-    }
-
-    private static int findTopLevelElse(String body) {
-        int len = body.length();
-        int depth = 0;
-        int i = 0;
-        while (i < len) {
-            if (body.startsWith("@if", i) || body.startsWith("@for", i) || body.startsWith("@switch", i) || body.startsWith("@try", i)) {
-                depth++;
-                i++;
-            } else if (body.startsWith("@end", i)) {
-                if (depth > 0) depth--;
-                i += 4;
-            } else if (depth == 0 && body.startsWith("@else", i) && isWordBoundary(body, i + 5)) {
-                return i;
-            } else {
-                i++;
-            }
-        }
-        return -1;
+        return curr;
     }
 
     private static int parseTryDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
-        int bodyStart = pos + 4;
-        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+        int openBrace = findNextChar(s, pos + 4, '{');
+        if (openBrace == -1 || openBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@try"));
+            return pos + 4;
+        }
 
-        int bodyEnd = findMatchingEnd(s, bodyStart, limit);
-        String fullBody = s.substring(bodyStart, bodyEnd);
+        int closeBrace = findMatchingBrace(s, openBrace);
+        if (closeBrace == -1 || closeBrace >= limit) {
+            nodes.add(new TemplateNode.StaticTextNode("@try"));
+            return pos + 4;
+        }
 
-        int catchIdx = -1;
-        int finallyIdx = -1;
-        int depth = 0;
-        int i = 0;
-        int len = fullBody.length();
+        List<TemplateNode> tryNodes = parseBlock(s, openBrace + 1, closeBrace, loopDepth);
+        String catchVar = "err";
+        List<TemplateNode> catchNodes = Collections.emptyList();
+        List<TemplateNode> finallyNodes = Collections.emptyList();
+        int curr = closeBrace + 1;
 
-        while (i < len) {
-            if (fullBody.startsWith("@if", i) || fullBody.startsWith("@for", i) || fullBody.startsWith("@switch", i) || fullBody.startsWith("@try", i)) {
-                depth++;
-                i++;
-            } else if (fullBody.startsWith("@end", i)) {
-                if (depth > 0) depth--;
-                i += 4;
-            } else if (depth == 0) {
-                if (catchIdx == -1 && fullBody.startsWith("@catch", i) && isWordBoundary(fullBody, i + 6)) {
-                    catchIdx = i;
-                    i += 6;
-                } else if (finallyIdx == -1 && fullBody.startsWith("@finally", i) && isWordBoundary(fullBody, i + 8)) {
-                    finallyIdx = i;
-                    i += 8;
-                } else {
-                    i++;
+        while (curr < limit) {
+            int nextToken = findNextNonWhitespace(s, curr);
+            if (nextToken == -1 || nextToken >= limit) break;
+
+            if (s.startsWith("@catch", nextToken) && isWordBoundary(s, nextToken + 6)) {
+                int afterCatch = nextToken + 6;
+                int parenOpen = findNextChar(s, afterCatch, '(');
+                int afterParen = afterCatch;
+                if (parenOpen != -1 && parenOpen < limit) {
+                    int parenClose = findMatchingParen(s, parenOpen);
+                    if (parenClose != -1 && parenClose < limit) {
+                        catchVar = s.substring(parenOpen + 1, parenClose).trim();
+                        afterParen = parenClose + 1;
+                    }
+                }
+                int catchOpenBrace = findNextChar(s, afterParen, '{');
+                if (catchOpenBrace != -1 && catchOpenBrace < limit) {
+                    int catchCloseBrace = findMatchingBrace(s, catchOpenBrace);
+                    if (catchCloseBrace != -1 && catchCloseBrace <= limit) {
+                        catchNodes = parseBlock(s, catchOpenBrace + 1, catchCloseBrace, loopDepth);
+                        curr = catchCloseBrace + 1;
+                    }
+                }
+            } else if (s.startsWith("@finally", nextToken) && isWordBoundary(s, nextToken + 8)) {
+                int finallyOpenBrace = findNextChar(s, nextToken + 8, '{');
+                if (finallyOpenBrace != -1 && finallyOpenBrace < limit) {
+                    int finallyCloseBrace = findMatchingBrace(s, finallyOpenBrace);
+                    if (finallyCloseBrace != -1 && finallyCloseBrace <= limit) {
+                        finallyNodes = parseBlock(s, finallyOpenBrace + 1, finallyCloseBrace, loopDepth);
+                        curr = finallyCloseBrace + 1;
+                    }
                 }
             } else {
-                i++;
+                break;
             }
         }
-
-        String tryStr = "";
-        String catchVar = "err";
-        String catchStr = "";
-        String finallyStr = "";
-
-        if (catchIdx != -1 && finallyIdx != -1) {
-            tryStr = fullBody.substring(0, catchIdx);
-            catchStr = fullBody.substring(catchIdx, finallyIdx);
-            finallyStr = fullBody.substring(finallyIdx + 8);
-        } else if (catchIdx != -1) {
-            tryStr = fullBody.substring(0, catchIdx);
-            catchStr = fullBody.substring(catchIdx);
-        } else if (finallyIdx != -1) {
-            tryStr = fullBody.substring(0, finallyIdx);
-            finallyStr = fullBody.substring(finallyIdx + 8);
-        } else {
-            tryStr = fullBody;
-        }
-
-        if (catchIdx != -1) {
-            int openParen = catchStr.indexOf('(');
-            int closeParen = findMatchingParen(catchStr, openParen);
-            if (openParen != -1 && closeParen != -1) {
-                catchVar = catchStr.substring(openParen + 1, closeParen).trim();
-                catchStr = catchStr.substring(closeParen + 1);
-            } else {
-                catchStr = catchStr.substring(6);
-            }
-            if (catchStr.startsWith(":")) catchStr = catchStr.substring(1);
-        }
-        if (finallyStr.startsWith(":")) finallyStr = finallyStr.substring(1);
-
-        List<TemplateNode> tryNodes = parseBlock(tryStr, 0, tryStr.length(), loopDepth);
-        List<TemplateNode> catchNodes = catchIdx != -1 ? parseBlock(catchStr, 0, catchStr.length(), loopDepth) : Collections.emptyList();
-        List<TemplateNode> finallyNodes = finallyIdx != -1 ? parseBlock(finallyStr, 0, finallyStr.length(), loopDepth) : Collections.emptyList();
 
         nodes.add(new TemplateNode.TryNode(tryNodes, catchVar, catchNodes, finallyNodes));
-        return bodyEnd + 4;
+        return curr;
     }
 
     private static int parseSwitchDirective(String s, int pos, int limit, List<TemplateNode> nodes, int loopDepth) {
@@ -486,58 +477,125 @@ public final class TemplateParser {
         }
 
         String expr = s.substring(openParen + 1, closeParen).trim();
-        int bodyStart = closeParen + 1;
-        if (bodyStart < limit && s.charAt(bodyStart) == ':') bodyStart++;
+        int nextCharHeader = findNextNonWhitespace(s, closeParen + 1);
+        int switchBodyStart;
+        int switchBodyEnd;
+        int returnPos;
+        if (nextCharHeader != -1 && s.charAt(nextCharHeader) == '{') {
+            int closeBrace = findMatchingBrace(s, nextCharHeader);
+            if (closeBrace == -1 || closeBrace >= limit) {
+                nodes.add(new TemplateNode.StaticTextNode("@switch"));
+                return pos + 7;
+            }
+            switchBodyStart = nextCharHeader + 1;
+            switchBodyEnd = closeBrace;
+            returnPos = closeBrace + 1;
+        } else if (nextCharHeader != -1 && s.charAt(nextCharHeader) == ':') {
+            switchBodyStart = nextCharHeader + 1;
+            int endDirective = findNextControlFlowDirectiveInBody(s, switchBodyStart);
+            while (endDirective != -1 && (s.startsWith("@case", endDirective) || s.startsWith("@default", endDirective))) {
+                endDirective = findNextControlFlowDirectiveInBody(s, endDirective + 5);
+            }
+            if (endDirective != -1 && s.startsWith("@end", endDirective)) {
+                switchBodyEnd = endDirective;
+                returnPos = endDirective + 4;
+            } else {
+                switchBodyEnd = limit;
+                returnPos = limit;
+            }
+        } else {
+            nodes.add(new TemplateNode.StaticTextNode("@switch"));
+            return pos + 7;
+        }
 
-        int bodyEnd = findMatchingEnd(s, bodyStart, limit);
-
-        String body = s.substring(bodyStart, bodyEnd);
+        String switchBody = s.substring(switchBodyStart, switchBodyEnd);
         Map<String, List<TemplateNode>> cases = new LinkedHashMap<>();
         List<TemplateNode> defaultBranch = Collections.emptyList();
 
-        int len = body.length();
+        int len = switchBody.length();
         int i = 0;
-        String currentCaseVal = null;
-        boolean isDefault = false;
-        int caseBodyStart = 0;
 
         while (i < len) {
-            if (body.startsWith("@case", i) && isWordBoundary(body, i + 5)) {
-                if (currentCaseVal != null) {
-                    cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth));
-                } else if (isDefault) {
-                    defaultBranch = parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth);
-                    isDefault = false;
-                }
+            int nextDirective = findNextControlFlowDirectiveInBody(switchBody, i);
+            if (nextDirective == -1) break;
 
-                int cOpen = body.indexOf('(', i);
-                int cClose = findMatchingParen(body, cOpen);
-                currentCaseVal = body.substring(cOpen + 1, cClose).trim();
-                caseBodyStart = cClose + 1;
-                if (caseBodyStart < len && body.charAt(caseBodyStart) == ':') caseBodyStart++;
-                i = caseBodyStart;
-            } else if (body.startsWith("@default", i) && isWordBoundary(body, i + 8)) {
-                if (currentCaseVal != null) {
-                    cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, i), 0, i - caseBodyStart, loopDepth));
-                    currentCaseVal = null;
+            if (switchBody.startsWith("@case", nextDirective) && isWordBoundary(switchBody, nextDirective + 5)) {
+                int cOpen = switchBody.indexOf('(', nextDirective + 5);
+                int cClose = findMatchingParen(switchBody, cOpen);
+                if (cOpen != -1 && cClose != -1) {
+                    String caseVal = switchBody.substring(cOpen + 1, cClose).trim();
+                    int nextChar = findNextNonWhitespace(switchBody, cClose + 1);
+                    if (nextChar != -1 && switchBody.charAt(nextChar) == '{') {
+                        int cCloseBrace = findMatchingBrace(switchBody, nextChar);
+                        if (cCloseBrace != -1) {
+                            cases.put(caseVal, parseBlock(switchBody, nextChar + 1, cCloseBrace, loopDepth));
+                            i = cCloseBrace + 1;
+                            continue;
+                        }
+                    } else if (nextChar != -1 && switchBody.charAt(nextChar) == ':') {
+                        int startBlock = nextChar + 1;
+                        int nextCase = findNextCaseOrDefaultOrEnd(switchBody, startBlock);
+                        int endBlock = (nextCase != -1) ? nextCase : len;
+                        cases.put(caseVal, parseBlock(switchBody, startBlock, endBlock, loopDepth));
+                        i = endBlock;
+                        continue;
+                    }
                 }
-                isDefault = true;
-                caseBodyStart = i + 8;
-                if (caseBodyStart < len && body.charAt(caseBodyStart) == ':') caseBodyStart++;
-                i = caseBodyStart;
+                i = nextDirective + 5;
+            } else if (switchBody.startsWith("@default", nextDirective) && isWordBoundary(switchBody, nextDirective + 8)) {
+                int nextChar = findNextNonWhitespace(switchBody, nextDirective + 8);
+                if (nextChar != -1 && switchBody.charAt(nextChar) == '{') {
+                    int dCloseBrace = findMatchingBrace(switchBody, nextChar);
+                    if (dCloseBrace != -1) {
+                        defaultBranch = parseBlock(switchBody, nextChar + 1, dCloseBrace, loopDepth);
+                        i = dCloseBrace + 1;
+                        continue;
+                    }
+                } else if (nextChar != -1 && switchBody.charAt(nextChar) == ':') {
+                    int startBlock = nextChar + 1;
+                    int nextCase = findNextCaseOrDefaultOrEnd(switchBody, startBlock);
+                    int endBlock = (nextCase != -1) ? nextCase : len;
+                    defaultBranch = parseBlock(switchBody, startBlock, endBlock, loopDepth);
+                    i = endBlock;
+                    continue;
+                }
+                i = nextDirective + 8;
             } else {
-                i++;
+                i = nextDirective + 1;
             }
         }
 
-        if (currentCaseVal != null) {
-            cases.put(currentCaseVal, parseBlock(body.substring(caseBodyStart, len), 0, len - caseBodyStart, loopDepth));
-        } else if (isDefault) {
-            defaultBranch = parseBlock(body.substring(caseBodyStart, len), 0, len - caseBodyStart, loopDepth);
-        }
-
         nodes.add(new TemplateNode.SwitchNode(expr, cases, defaultBranch));
-        return bodyEnd + 4;
+        return returnPos;
+    }
+
+    private static int findNextCaseOrDefaultOrEnd(String text, int fromIdx) {
+        int curr = fromIdx;
+        int len = text.length();
+        while (curr < len) {
+            int next = text.indexOf('@', curr);
+            if (next == -1) return -1;
+            if ((text.startsWith("@case", next) && isWordBoundary(text, next + 5))
+             || (text.startsWith("@default", next) && isWordBoundary(text, next + 8))
+             || (text.startsWith("@end", next) && isWordBoundary(text, next + 4))) {
+                return next;
+            }
+            curr = next + 1;
+        }
+        return -1;
+    }
+
+    private static int findNextControlFlowDirectiveInBody(String text, int fromIdx) {
+        int len = text.length();
+        int curr = fromIdx;
+        while (curr < len) {
+            if ((text.startsWith("@case", curr) && isWordBoundary(text, curr + 5))
+                    || (text.startsWith("@default", curr) && isWordBoundary(text, curr + 8))) {
+                return curr;
+            }
+            curr++;
+        }
+        return -1;
     }
 
     private static int findMatchingParen(String s, int openParen) {
@@ -552,35 +610,6 @@ public final class TemplateParser {
             }
         }
         return -1;
-    }
-
-    private static int findMatchingEnd(String s, int start, int limit) {
-        int depth = 1;
-        int i = start;
-        while (i < limit) {
-            if (s.startsWith("@if", i) && isWordBoundary(s, i + 3)) {
-                depth++;
-                i += 3;
-            } else if (s.startsWith("@for", i) && isWordBoundary(s, i + 4)) {
-                depth++;
-                i += 4;
-            } else if (s.startsWith("@switch", i) && isWordBoundary(s, i + 7)) {
-                depth++;
-                i += 7;
-            } else if (s.startsWith("@try", i) && isWordBoundary(s, i + 4)) {
-                depth++;
-                i += 4;
-            } else if (s.startsWith("@end", i) && isWordBoundary(s, i + 4)) {
-                depth--;
-                if (depth == 0) {
-                    return i;
-                }
-                i += 4;
-            } else {
-                i++;
-            }
-        }
-        return limit;
     }
 
     private static boolean isWordBoundary(String s, int pos) {

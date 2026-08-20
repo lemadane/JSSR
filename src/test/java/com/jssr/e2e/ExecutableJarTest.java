@@ -34,7 +34,7 @@ class ExecutableJarTest {
         JssrPrecompiler.enableGlobalPrecompilation(true);
         try {
             UserForm form = new UserForm(1L, "Lemuel", "lem@example.com", "Admin", "ACTIVE", true);
-            String rendered = form.render();
+            String rendered = form.renderPrecompiled();
 
             assertNotNull(rendered);
             assertTrue(rendered.contains("Lemuel"));

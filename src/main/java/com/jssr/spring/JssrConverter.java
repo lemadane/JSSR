@@ -36,7 +36,7 @@ public class JssrConverter extends AbstractHttpMessageConverter<JssrComponent> {
     @Override
     protected void writeInternal(@NonNull JssrComponent component, @NonNull HttpOutputMessage outputMessage)
             throws IOException, HttpMessageNotWritableException {
-        String html = component.render();
+        String html = JssrComponent.render(component);
         outputMessage.getBody().write(html.getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -15,18 +15,18 @@ public class InstanceofTest {
 
     public record PatternMatchComp(Object user) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="user-card">
-                @if (user instanceof AdminUser admin)
+                @if (user instanceof AdminUser admin) {
                     <span class="badge-admin">Admin: ${admin.name} (${admin.permissions})</span>
-                @elseif (user instanceof DeveloperUser dev)
+                } @elseif (user instanceof DeveloperUser dev) {
                     <span class="badge-dev">Dev: ${dev.name} (${dev.githubHandle} - ${dev.primaryLanguage})</span>
-                @elseif (user instanceof StandardUser sUser)
+                } @elseif (user instanceof StandardUser sUser) {
                     <span class="badge-user">User: ${sUser.name} (${sUser.planType})</span>
-                @else
+                } @else {
                     <span class="badge-guest">Guest</span>
-                @end
+                }
                 </div>
                 """;
         }
@@ -34,16 +34,16 @@ public class InstanceofTest {
 
     public record PatternMatchInForComp(List<Object> users) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="user-list">
-                @for (u : users)
-                    @if (u instanceof AdminUser a)
+                @for (u : users) {
+                    @if (u instanceof AdminUser a) {
                         <div class="admin-item">Admin ${a.name}</div>
-                    @elseif (u instanceof StandardUser s)
+                    } @elseif (u instanceof StandardUser s) {
                         <div class="user-item">User ${s.name}</div>
-                    @end
-                @end
+                    }
+                }
                 </div>
                 """;
         }
@@ -53,22 +53,22 @@ public class InstanceofTest {
     @DisplayName("@if (user instanceof Type varName) matches type and binds pattern variable")
     void testInstanceofPatternMatchingAndVariableBinding() {
         PatternMatchComp adminComp = new PatternMatchComp(new AdminUser("Elena", "ALL_PERMISSIONS"));
-        String adminHtml = adminComp.render();
+        String adminHtml = JssrComponent.render(adminComp);
         assertTrue(adminHtml.contains("badge-admin"));
         assertTrue(adminHtml.contains("Admin: Elena (ALL_PERMISSIONS)"));
 
         PatternMatchComp devComp = new PatternMatchComp(new DeveloperUser("Marcus", "@mvance", "Java"));
-        String devHtml = devComp.render();
+        String devHtml = JssrComponent.render(devComp);
         assertTrue(devHtml.contains("badge-dev"));
         assertTrue(devHtml.contains("Dev: Marcus (@mvance - Java)"));
 
         PatternMatchComp userComp = new PatternMatchComp(new StandardUser("Sophia", "PRO"));
-        String userHtml = userComp.render();
+        String userHtml = JssrComponent.render(userComp);
         assertTrue(userHtml.contains("badge-user"));
         assertTrue(userHtml.contains("User: Sophia (PRO)"));
 
         PatternMatchComp guestComp = new PatternMatchComp(null);
-        String guestHtml = guestComp.render();
+        String guestHtml = JssrComponent.render(guestComp);
         assertTrue(guestHtml.contains("badge-guest"));
         assertTrue(guestHtml.contains("Guest"));
     }
@@ -81,7 +81,7 @@ public class InstanceofTest {
             new StandardUser("Bob", "BASIC")
         ));
 
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
         assertTrue(html.contains("admin-item"));
         assertTrue(html.contains("Admin Alice"));
         assertTrue(html.contains("user-item"));

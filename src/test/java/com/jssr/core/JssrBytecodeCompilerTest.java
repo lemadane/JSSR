@@ -30,14 +30,14 @@ public class JssrBytecodeCompilerTest {
 
     public record SimpleUser(String name, int age) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"user\"><h1>${name}</h1><p>Age: ${age}</p></div>";
         }
     }
 
     public record SecurityTestCard(String title, RawHtml rawContent, SafeUrl profileUrl) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="card">
                     <h2>${title}</h2>
@@ -91,12 +91,12 @@ public class JssrBytecodeCompilerTest {
 
         // Before global toggle
         assertFalse(JssrPrecompiler.isGlobalPrecompilationEnabled());
-        String standardHtml = user.render();
+        String standardHtml = JssrComponent.render(user);
 
         // Enable global precompilation
         JssrPrecompiler.enableGlobalPrecompilation(true);
         assertTrue(JssrPrecompiler.isGlobalPrecompilationEnabled());
-        String precompiledHtml = user.render();
+        String precompiledHtml = JssrComponent.render(user);
 
         assertEquals(standardHtml, precompiledHtml);
         assertEquals("<div class=\"user\"><h1>Charlie</h1><p>Age: 25</p></div>", precompiledHtml);
@@ -104,7 +104,7 @@ public class JssrBytecodeCompilerTest {
 
     public record UnsafeStringUrlCard(String profileUrl) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a href=\"${profileUrl}\">Link</a>";
         }
     }

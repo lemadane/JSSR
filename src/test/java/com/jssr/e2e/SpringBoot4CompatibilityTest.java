@@ -31,7 +31,7 @@ public class SpringBoot4CompatibilityTest {
 
     public record SpringBoot4Card(String title, SafeUrl homeUrl) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="springboot4-card bg-slate-900 text-white p-6 rounded-xl border border-slate-800">
                     <h2 class="text-xl font-bold text-emerald-400">${title}</h2>
@@ -57,7 +57,7 @@ public class SpringBoot4CompatibilityTest {
     @DisplayName("Direct JSSR component record instantiation produces Spring Boot 4 compliant HTML output")
     void testDirectComponentRenderingForSpringBoot4() {
         SpringBoot4Card card = new SpringBoot4Card("Spring Boot 4 Integration Hub", SafeUrl.of("/home"));
-        String html = card.render();
+        String html = JssrComponent.render(card);
 
         org.junit.jupiter.api.Assertions.assertTrue(html.contains("Spring Boot 4 Integration Hub"));
         org.junit.jupiter.api.Assertions.assertTrue(html.contains("href=\"/home\""));

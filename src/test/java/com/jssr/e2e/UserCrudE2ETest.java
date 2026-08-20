@@ -107,28 +107,28 @@ class UserCrudE2ETest {
 
         public record CustomCard(RawHtml children) implements JssrComponent {
             @Override
-            public String template() {
+            public String render() {
                 return "<div class=\"custom-card\">${children}</div>";
             }
         }
 
         public record DummyLink(SafeUrl href, String label) implements JssrComponent {
             @Override
-            public String template() {
+            public String render() {
                 return "<a href=\"${href}\">${label}</a>";
             }
         }
 
         public record CascadingExample(String first, String second) implements JssrComponent {
             @Override
-            public String template() {
+            public String render() {
                 return "<p>${first}</p>";
             }
         }
 
         public record PageWithCard(String username) implements JssrComponent {
             @Override
-            public String template() {
+            public String render() {
                 return """
                     <CustomCard>
                         <p>${username}</p>
@@ -139,7 +139,7 @@ class UserCrudE2ETest {
 
         public record RecursiveComp() implements JssrComponent {
             @Override
-            public String template() {
+            public String render() {
                 return "<RecursiveComp />";
             }
         }
@@ -175,7 +175,7 @@ class UserCrudE2ETest {
         @DisplayName("2. Single-pass variable interpolation should prevent cascading placeholder replacement")
         void testSinglePassInterpolation() {
             CascadingExample example = new CascadingExample("${second}", "SECRET_DATA");
-            String html = example.render();
+            String html = JssrComponent.render(example);
 
             assertEquals("<p>${second}</p>", html);
             assertFalse(html.contains("SECRET_DATA"));
@@ -224,7 +224,7 @@ class UserCrudE2ETest {
             assertEquals("/users/42", SafeUrl.sanitize("/users/42"));
 
             DummyLink link = new DummyLink(SafeUrl.of("https://example.com/\" onmouseover=\"alert(1)"), "Click");
-            String html = link.render();
+            String html = JssrComponent.render(link);
             assertTrue(html.contains("href=\"https://example.com/&quot; onmouseover=&quot;alert(1)\""));
             assertFalse(html.contains("\" onmouseover=\""));
         }
@@ -234,7 +234,7 @@ class UserCrudE2ETest {
         void testPairedRawHtmlChildrenXssPreservation() {
             JssrComponent.register("CustomCard", CustomCard.class);
             PageWithCard page = new PageWithCard("<img src=x onerror=alert(1)>");
-            String html = page.render();
+            String html = JssrComponent.render(page);
 
             assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
             assertFalse(html.contains("<img src=x onerror=alert(1)>"));
@@ -255,7 +255,7 @@ class UserCrudE2ETest {
         void testRecursionLimitProtection() {
             JssrComponent.register("RecursiveComp", RecursiveComp.class);
             Exception ex = assertThrows(IllegalStateException.class, () -> {
-                new RecursiveComp().render();
+                JssrComponent.render(new RecursiveComp());
             });
             assertTrue(ex.getMessage().contains("recursion limit exceeded"));
         }
@@ -425,7 +425,7 @@ class UserCrudE2ETest {
             }
 
             @Override
-            public String template() {
+            public String render() {
                 return """
                     <form id="advanced-form">
                         <label>
@@ -455,7 +455,7 @@ class UserCrudE2ETest {
         @DisplayName("Radio buttons and Checkboxes should render correct checked state for form inputs")
         void testFormControlsCheckedState() {
             AdvancedForm form = AdvancedForm.of(true, false, "PRO");
-            String html = form.render();
+            String html = JssrComponent.render(form);
 
             // Checkbox assertions
             assertTrue(html.contains("name=\"subscribe\" value=\"true\" checked"));
@@ -471,7 +471,7 @@ class UserCrudE2ETest {
         @DisplayName("Control flow directives (@if, @elseif, @else, @end) should render correct branch in E2E components")
         void testE2eControlFlowDirectives() {
             com.jssr.e2e.app.components.UserStatusBadge adminBadge = new com.jssr.e2e.app.components.UserStatusBadge("ADMIN", "ACTIVE", true);
-            String htmlAdmin = adminBadge.render();
+            String htmlAdmin = JssrComponent.render(adminBadge);
             assertTrue(htmlAdmin.contains("badge-admin"));
             assertTrue(htmlAdmin.contains("System Admin"));
             assertTrue(htmlAdmin.contains("status-active"));
@@ -479,14 +479,14 @@ class UserCrudE2ETest {
             assertFalse(htmlAdmin.contains("badge-user"));
 
             com.jssr.e2e.app.components.UserStatusBadge devBadge = new com.jssr.e2e.app.components.UserStatusBadge("DEVELOPER", "INACTIVE", false);
-            String htmlDev = devBadge.render();
+            String htmlDev = JssrComponent.render(devBadge);
             assertTrue(htmlDev.contains("badge-dev"));
             assertTrue(htmlDev.contains("Core Developer"));
             assertTrue(htmlDev.contains("status-inactive"));
             assertFalse(htmlDev.contains("badge-admin"));
 
             com.jssr.e2e.app.components.UserStatusBadge userBadge = new com.jssr.e2e.app.components.UserStatusBadge("GUEST", "ACTIVE", true);
-            String htmlUser = userBadge.render();
+            String htmlUser = JssrComponent.render(userBadge);
             assertTrue(htmlUser.contains("badge-user"));
             assertTrue(htmlUser.contains("Standard User (GUEST)"));
             assertTrue(htmlUser.contains("status-active"));
@@ -504,7 +504,7 @@ class UserCrudE2ETest {
                 com.jssr.core.BooleanAttribute.present("checked")
             );
             com.jssr.e2e.app.components.UserProfileDashboard adminDashboard = new com.jssr.e2e.app.components.UserProfileDashboard(adminUser);
-            String html1 = adminDashboard.render();
+            String html1 = JssrComponent.render(adminDashboard);
 
             assertTrue(html1.contains("System Administrator"));
             assertTrue(html1.contains("Active Account"));
@@ -524,7 +524,7 @@ class UserCrudE2ETest {
                 com.jssr.core.BooleanAttribute.absent("checked")
             );
             com.jssr.e2e.app.components.UserProfileDashboard devDashboard = new com.jssr.e2e.app.components.UserProfileDashboard(devUser);
-            String html2 = devDashboard.render();
+            String html2 = JssrComponent.render(devDashboard);
 
             assertTrue(html2.contains("Lead Developer"));
             assertTrue(html2.contains("Active Account"));
@@ -544,7 +544,7 @@ class UserCrudE2ETest {
                 com.jssr.core.BooleanAttribute.absent("checked")
             );
             com.jssr.e2e.app.components.UserProfileDashboard freeDashboard = new com.jssr.e2e.app.components.UserProfileDashboard(freeUser);
-            String html3 = freeDashboard.render();
+            String html3 = JssrComponent.render(freeDashboard);
 
             assertTrue(html3.contains("Member (MEMBER)"));
             assertTrue(html3.contains("Suspended Account"));
@@ -562,7 +562,7 @@ class UserCrudE2ETest {
             com.jssr.e2e.app.model.Project p3 = new com.jssr.e2e.app.model.Project(3L, "WebAssembly Compiler", "Native AOT compilation pipeline", "PLANNING", 0);
 
             com.jssr.e2e.app.components.UserProjectsCard populatedCard = new com.jssr.e2e.app.components.UserProjectsCard("Elena Rostova", java.util.List.of(p1, p2, p3));
-            String htmlPopulated = populatedCard.render();
+            String htmlPopulated = JssrComponent.render(populatedCard);
 
             assertTrue(htmlPopulated.contains("Assigned Projects for Elena Rostova"));
             assertTrue(htmlPopulated.contains("JSSR Production Engine"));
@@ -581,7 +581,7 @@ class UserCrudE2ETest {
 
             // Case B: User with 0 projects -> triggers @else fallback branch
             com.jssr.e2e.app.components.UserProjectsCard emptyCard = new com.jssr.e2e.app.components.UserProjectsCard("Marcus Vance", java.util.List.of());
-            String htmlEmpty = emptyCard.render();
+            String htmlEmpty = JssrComponent.render(emptyCard);
 
             assertTrue(htmlEmpty.contains("Assigned Projects for Marcus Vance"));
             assertTrue(htmlEmpty.contains("no-projects-fallback"));
@@ -612,7 +612,7 @@ class UserCrudE2ETest {
             );
 
             com.jssr.e2e.app.components.AnalyticsReportCard reportCard = new com.jssr.e2e.app.components.AnalyticsReportCard(cursor);
-            String html = reportCard.render();
+            String html = JssrComponent.render(reportCard);
 
             assertTrue(html.contains("Production Cluster Health Diagnostic Report"));
             assertTrue(html.contains("CPU Load"));
@@ -632,27 +632,27 @@ class UserCrudE2ETest {
             // Case 1: AdminUser
             com.jssr.e2e.app.model.AdminUser admin = new com.jssr.e2e.app.model.AdminUser("Elena Rostova", "SUPERUSER,READ,WRITE");
             com.jssr.e2e.app.components.UserRoleCard adminCard = new com.jssr.e2e.app.components.UserRoleCard(admin);
-            String adminHtml = adminCard.render();
+            String adminHtml = JssrComponent.render(adminCard);
             assertTrue(adminHtml.contains("role-badge-admin"));
             assertTrue(adminHtml.contains("System Administrator: Elena Rostova (SUPERUSER,READ,WRITE)"));
 
             // Case 2: DeveloperUser
             com.jssr.e2e.app.model.DeveloperUser dev = new com.jssr.e2e.app.model.DeveloperUser("Marcus Vance", "@mvance", "Java");
             com.jssr.e2e.app.components.UserRoleCard devCard = new com.jssr.e2e.app.components.UserRoleCard(dev);
-            String devHtml = devCard.render();
+            String devHtml = JssrComponent.render(devCard);
             assertTrue(devHtml.contains("role-badge-dev"));
             assertTrue(devHtml.contains("Developer: Marcus Vance (@mvance - Java)"));
 
             // Case 3: StandardUser
             com.jssr.e2e.app.model.StandardUser user = new com.jssr.e2e.app.model.StandardUser("Sophia Chen", "ENTERPRISE");
             com.jssr.e2e.app.components.UserRoleCard userCard = new com.jssr.e2e.app.components.UserRoleCard(user);
-            String userHtml = userCard.render();
+            String userHtml = JssrComponent.render(userCard);
             assertTrue(userHtml.contains("role-badge-user"));
             assertTrue(userHtml.contains("User: Sophia Chen (ENTERPRISE)"));
 
             // Case 4: null -> @default fallback
             com.jssr.e2e.app.components.UserRoleCard guestCard = new com.jssr.e2e.app.components.UserRoleCard(null);
-            String guestHtml = guestCard.render();
+            String guestHtml = JssrComponent.render(guestCard);
             assertTrue(guestHtml.contains("role-badge-guest"));
             assertTrue(guestHtml.contains("Anonymous Guest Account"));
         }
@@ -663,27 +663,27 @@ class UserCrudE2ETest {
             // Case 1: AdminUser
             com.jssr.e2e.app.model.AdminUser admin = new com.jssr.e2e.app.model.AdminUser("Elena Rostova", "SUPERUSER,READ,WRITE");
             com.jssr.e2e.app.components.PatternMatchingUserCard adminCard = new com.jssr.e2e.app.components.PatternMatchingUserCard(admin);
-            String adminHtml = adminCard.render();
+            String adminHtml = JssrComponent.render(adminCard);
             assertTrue(adminHtml.contains("role-badge-admin"));
             assertTrue(adminHtml.contains("System Administrator: Elena Rostova (SUPERUSER,READ,WRITE)"));
 
             // Case 2: DeveloperUser
             com.jssr.e2e.app.model.DeveloperUser dev = new com.jssr.e2e.app.model.DeveloperUser("Marcus Vance", "@mvance", "Java");
             com.jssr.e2e.app.components.PatternMatchingUserCard devCard = new com.jssr.e2e.app.components.PatternMatchingUserCard(dev);
-            String devHtml = devCard.render();
+            String devHtml = JssrComponent.render(devCard);
             assertTrue(devHtml.contains("role-badge-dev"));
             assertTrue(devHtml.contains("Developer: Marcus Vance (@mvance - Java)"));
 
             // Case 3: StandardUser
             com.jssr.e2e.app.model.StandardUser user = new com.jssr.e2e.app.model.StandardUser("Sophia Chen", "ENTERPRISE");
             com.jssr.e2e.app.components.PatternMatchingUserCard userCard = new com.jssr.e2e.app.components.PatternMatchingUserCard(user);
-            String userHtml = userCard.render();
+            String userHtml = JssrComponent.render(userCard);
             assertTrue(userHtml.contains("role-badge-user"));
             assertTrue(userHtml.contains("User: Sophia Chen (ENTERPRISE)"));
 
             // Case 4: null -> @else fallback
             com.jssr.e2e.app.components.PatternMatchingUserCard guestCard = new com.jssr.e2e.app.components.PatternMatchingUserCard(null);
-            String guestHtml = guestCard.render();
+            String guestHtml = JssrComponent.render(guestCard);
             assertTrue(guestHtml.contains("role-badge-guest"));
             assertTrue(guestHtml.contains("Anonymous Guest Account"));
         }
@@ -694,7 +694,7 @@ class UserCrudE2ETest {
             // Case 1: Healthy rendering without fault
             com.jssr.e2e.app.components.FaultTolerantDashboardCard healthyCard = 
                 new com.jssr.e2e.app.components.FaultTolerantDashboardCard("OPERATIONAL", false);
-            String healthyHtml = healthyCard.render();
+            String healthyHtml = JssrComponent.render(healthyCard);
             assertTrue(healthyHtml.contains("Primary Service Status: OPERATIONAL"));
             assertTrue(healthyHtml.contains("Secondary Analytics Microservice Connected"));
             assertFalse(healthyHtml.contains("widget-fallback"));
@@ -702,7 +702,7 @@ class UserCrudE2ETest {
             // Case 2: Fault triggered inside sub-widget -> @try ... @catch captures fault and renders fallback UI
             com.jssr.e2e.app.components.FaultTolerantDashboardCard faultyCard = 
                 new com.jssr.e2e.app.components.FaultTolerantDashboardCard("OPERATIONAL", true);
-            String faultyHtml = faultyCard.render();
+            String faultyHtml = JssrComponent.render(faultyCard);
             assertTrue(faultyHtml.contains("Primary Service Status: OPERATIONAL"));
             assertTrue(faultyHtml.contains("widget-fallback"));
             assertTrue(faultyHtml.contains("Microservice widget isolated cleanly"));

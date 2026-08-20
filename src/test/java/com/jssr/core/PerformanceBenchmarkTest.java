@@ -9,7 +9,7 @@ class PerformanceBenchmarkTest {
 
     public record UserCard(String name, String role, SafeUrl profileUrl, boolean active) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="user-card" ${active}>
                     <h2>${name}</h2>
@@ -27,13 +27,13 @@ class PerformanceBenchmarkTest {
 
         // Warm up cache
         for (int i = 0; i < 1_000; i++) {
-            card.render();
+            JssrComponent.render(card);
         }
 
         long startNanos = System.nanoTime();
         int iterations = 100_000;
         for (int i = 0; i < iterations; i++) {
-            String html = card.render();
+            String html = JssrComponent.render(card);
             assertNotNull(html);
         }
         long totalNanos = System.nanoTime() - startNanos;

@@ -14,7 +14,7 @@ public record RawHtml(String value) implements JssrComponent {
     }
 
     @Override
-    public String template() {
+    public String render() {
         return value == null ? "" : value;
     }
 

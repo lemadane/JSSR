@@ -49,7 +49,7 @@ In JSSR component Records, any field (e.g. `name`, `role`, `active`) can be refe
 public record UserCard(String name, String role, boolean active) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="user-card border p-4 rounded-xl">
                 <h3 class="font-bold text-lg">${name}</h3>
@@ -71,12 +71,12 @@ JSSR provides a rich, native control flow engine designed for Java 17+ record te
 
 | Directive Syntax | Key Feature & Purpose | Typical Example |
 | :--- | :--- | :--- |
-| `@if(cond):` ... `@elseif(cond):` ... `@else:` ... `@end` | Conditional branching with property paths, negations (`!`), and comparisons | `@if (user.role == 'ADMIN'):` |
-| `@if(obj instanceof Type var):` | Java 17+ pattern matching with scoped variable binding | `@if (user instanceof AdminUser admin):` |
-| `@for(item : collection):` ... `@else:` ... `@end` | Collection & array iteration with empty-list fallback rendering | `@for (item : user.projects):` |
-| `@switch(expr):` ... `@case(val):` ... `@default:` ... `@end` | Value pattern matching & polymorphic runtime type inspection | `@switch (typeof(account)):` |
-| `@try:` ... `@catch(err):` ... `@finally:` ... `@end` | Template error boundaries for component fault isolation and safe fallback UI | `@try: ... @catch(e):` |
-| `@throw("msg")` / `@throw(new Ex("msg"))` / `@throw(ex)` | Intentionally raise custom or instantiated exceptions inside templates | `@throw(new IllegalStateException("Quorum Lost")):` |
+| `@if(cond) { ... } @elseif(cond) { ... } @else { ... }` | Conditional branching with property paths, negations (`!`), and comparisons | `@if (user.role == 'ADMIN') { ... }` |
+| `@if(obj instanceof Type var) { ... }` | Java 17+ pattern matching with scoped variable binding | `@if (user instanceof AdminUser admin) { ... }` |
+| `@for(item : collection) { ... } @else { ... }` | Collection & array iteration with empty-list fallback rendering | `@for (item : user.projects) { ... }` |
+| `@switch(expr) { @case(val) { ... } @default { ... } }` | Value pattern matching & polymorphic runtime type inspection | `@switch (typeof(account)) { ... }` |
+| `@try { ... } @catch(err) { ... } @finally { ... }` | Template error boundaries for component fault isolation and safe fallback UI | `@try { ... } @catch(e) { ... }` |
+| `@throw("msg")` / `@throw(new Ex("msg"))` / `@throw(ex)` | Intentionally raise custom or instantiated exceptions inside templates | `@throw(new IllegalStateException("Quorum Lost"))` |
 | `@continue` / `@break` | Early iteration skipping (`@continue`) or loop/switch termination (`@break`) | `@continue` / `@break` |
 
 ---
@@ -89,23 +89,23 @@ JSSR supports truthiness evaluation (`boolean`, non-blank `String`, non-zero `Nu
 public record UserHeaderCard(Object user) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="user-card font-sans p-4 bg-slate-900 rounded-xl">
                 <!-- Instanceof Pattern Matching with Automatic Local Scope Binding -->
-                @if (user instanceof com.jssr.e2e.app.model.AdminUser admin):
+                @if (user instanceof com.jssr.e2e.app.model.AdminUser admin) {
                     <div class="admin-badge text-purple-400 font-semibold">
                         🛡️ System Administrator: ${admin.name} (Permissions: ${admin.permissions})
                     </div>
-                @elseif (user instanceof com.jssr.e2e.app.model.DeveloperUser dev):
+                } @elseif (user instanceof com.jssr.e2e.app.model.DeveloperUser dev) {
                     <div class="dev-badge text-blue-400">
                         💻 Engineer: ${dev.name} (${dev.githubHandle} - ${dev.primaryLanguage})
                     </div>
-                @else:
+                } @else {
                     <div class="guest-badge text-slate-400">
                         👤 Guest Account
                     </div>
-                @end
+                }
             </div>
             """;
     }
@@ -122,31 +122,31 @@ Iterate seamlessly over `Collection`, `Iterable`, `Object[]`, or `Optional<Colle
 public record ProjectListCard(List<Project> projects) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="project-container p-6 bg-slate-950 text-slate-100 rounded-xl">
                 <h3 class="text-lg font-bold mb-4">Cluster Projects</h3>
 
                 <div class="project-list space-y-2">
-                    @for (p : projects):
-                        @if (p.priority < 0):
+                    @for (p : projects) {
+                        @if (p.priority < 0) {
                             @continue <!-- Skip internal debug projects -->
-                        @end
-                        @if (p.priority > 99):
+                        }
+                        @if (p.priority > 99) {
                             <div class="alert text-rose-500 font-bold">Priority Overflow (${p.name})</div>
                             @break <!-- Halt iteration on overflow -->
-                        @end
+                        }
 
                         <div class="project-item flex justify-between p-3 bg-slate-900 rounded border border-slate-800">
                             <span class="font-mono text-sm">${p.name}</span>
                             <span class="text-xs px-2 py-1 bg-slate-800 text-slate-300">${p.status}</span>
                         </div>
-                    @else:
+                    } @else {
                         <!-- Rendered automatically when projects list is empty or null -->
                         <div class="empty-state p-6 text-center text-slate-500 italic">
                             No active cluster projects found.
                         </div>
-                    @end
+                    }
                 </div>
             </div>
             """;
@@ -158,34 +158,54 @@ public record ProjectListCard(List<Project> projects) implements JssrComponent {
 
 ### 3. Polymorphic Switch Statements & Runtime Type Reflection (`@switch`, `typeof`)
 
-Pattern match on strings, numbers, enums, or runtime class/record names using `typeof(object)`:
+Pattern match on strings, numbers, enums, or runtime class/record names using `typeof(object)` with support for brace blocks `{ ... }`, colon syntax `:`, and explicit fallthrough rules:
 
 ```java
 public record RoleBadge(Object account) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="role-badge">
-                @switch (typeof(account)):
-                    @case (AdminUser):
+                @switch (typeof(account)) {
+                    @case ('AdminUser') {
                         <span class="badge bg-purple-500/10 text-purple-400 font-bold px-3 py-1 rounded-full">
                             System Administrator
                         </span>
                         @break
-                    @case (DeveloperUser):
+                    }
+                    @case ('DeveloperUser') {
                         <span class="badge bg-blue-500/10 text-blue-400 font-bold px-3 py-1 rounded-full">
                             Software Engineer
                         </span>
                         @break
-                    @default:
+                    }
+                    @default {
                         <span class="badge bg-slate-800 text-slate-400 px-3 py-1 rounded-full">
                             Guest Session
                         </span>
-                @end
+                    }
+                }
             </div>
             """;
     }
+}
+```
+
+#### Fallthrough & Syntax Options (`@break`, Colon Syntax)
+
+- **Fallthrough Semantics**: Omitting `@break` allows rendering to fall through into subsequent `@case` and `@default` bodies until `@break` is hit or the `@switch` block finishes.
+- **Colon Syntax & Mixed Formats**: Supports brace blocks (`@case(val) { ... }`), colon syntax (`@case(val): ...`), and colon cases inside an outer brace block `@switch (val) { ... }`:
+
+```html
+@switch (tier) {
+    @case ('PLATINUM'):
+        <span>Platinum Perks</span>   <!-- Falls through to GOLD (no @break) -->
+    @case ('GOLD'):
+        <span>Gold Perks</span>
+        @break                       <!-- Stops fallthrough -->
+    @default:
+        <span>Standard Perks</span>
 }
 ```
 
@@ -199,7 +219,7 @@ Isolate sub-component or property evaluation failures without crashing the page 
 public record ResilientDashboardCard(String validStatus, boolean triggerFault) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="resilient-card p-6 bg-slate-900 text-slate-100 rounded-xl">
                 <div class="status mb-4 text-emerald-400 font-semibold">
@@ -207,30 +227,30 @@ public record ResilientDashboardCard(String validStatus, boolean triggerFault) i
                 </div>
 
                 <!-- Template Error Boundary -->
-                @try:
-                    @if (triggerFault):
+                @try {
+                    @if (triggerFault) {
                         <!-- Option A: Standard String Message -->
-                        @throw("Manual Telemetry Fault Triggered via @throw"):
+                        @throw("Manual Telemetry Fault Triggered via @throw")
 
                         <!-- Option B: Exception Class Instantiation -->
-                        <!-- @throw(new java.lang.IllegalStateException("Cluster Quorum Lost")): -->
+                        <!-- @throw(new java.lang.IllegalStateException("Cluster Quorum Lost")) -->
 
                         <!-- Option C: Existing Property / Throwable Variable -->
-                        <!-- @throw(customThrowableVar): -->
-                    @else:
+                        <!-- @throw(customThrowableVar) -->
+                    } @else {
                         <div class="healthy-widget text-blue-400">
                             ⚡ Secondary Analytics Connected (Latency: 12ms)
                         </div>
-                    @end
-                @catch(e):
+                    }
+                } @catch(e) {
                     <div class="widget-fallback p-4 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono rounded-lg">
                         ⚠️ Microservice widget isolated cleanly (Type: ${typeof(e)} | ${e.message})
                     </div>
-                @finally:
+                } @finally {
                     <div class="audit-log text-slate-500 text-xs mt-2 font-mono">
                         [Audit]: Telemetry session verified.
                     </div>
-                @end
+                }
             </div>
             """;
     }
@@ -337,7 +357,7 @@ public record GreetingProps(String name) {}
 
 public record Greeting(GreetingProps props) implements JssrComponent {
     @Override
-    public String template() {
+    public String render() {
         return """
             <h1>Hello ${props.name}</h1>
             """;
@@ -366,7 +386,7 @@ The browser displays the literal text `Hello <script>alert(1)</script>` on scree
    ```java
    public record Article(RawHtml content) implements JssrComponent {
        @Override
-       public String template() {
+       public String render() {
            return """
                <article>${content}</article>
                """;
@@ -479,7 +499,7 @@ import com.jssr.core.JssrComponent;
 public record UserCard(String name, String role, boolean active) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="user-card border p-4 rounded-xl">
                 <h3 class="font-bold text-lg">${name}</h3>
@@ -507,7 +527,7 @@ public record UserList(List<UserCard> users) implements JssrComponent {
     }
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div id="user-list" class="space-y-4">
                 <UserCard name="Sarah Connor" role="Admin" active="true" />
@@ -591,7 +611,7 @@ This architecture brings SPA-like responsiveness, microsecond partial DOM update
 // 1. Reusable Page Layout Component
 public record AppLayout(String title, JssrComponent content) implements JssrComponent {
     @Override
-    public String template() {
+    public String render() {
         return """
             <!DOCTYPE html>
             <html lang="en">
@@ -654,7 +674,7 @@ import com.jssr.core.JssrComponent;
 public record UserForm(String name, String email, String errorMessage) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div id="form-container" class="max-w-md mx-auto p-6 bg-white rounded-xl shadow-md">
                 <h2 class="text-xl font-bold mb-4">Create User Account</h2>
@@ -744,7 +764,7 @@ public record PreferencesForm(
     }
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <form hx-post="/preferences">
                 <!-- Checkbox -->

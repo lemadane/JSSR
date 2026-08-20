@@ -24,7 +24,7 @@ public record UserList(
     }
 
     @Override
-    public String template() {
+    public String render() {
         List<User> userList = users != null ? users : List.of();
 
         StringBuilder rowsHtml = new StringBuilder();
@@ -56,12 +56,12 @@ public record UserList(
         }
 
         UserStats stats = new UserStats(totalCount, activeCount, adminCount);
-        String statsHtml = stats.render();
+        String statsHtml = JssrComponent.render(stats);
 
         String toastHtml = "";
         if (toastMessage != null && !toastMessage.isBlank()) {
             Toast toast = new Toast(toastMessage, toastType != null ? toastType : "success");
-            toastHtml = toast.render();
+            toastHtml = JssrComponent.render(toast);
         }
 
         String searchVal = searchQuery != null ? searchQuery : "";

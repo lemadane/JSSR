@@ -12,12 +12,12 @@ public class ForLoopTest {
 
     public record SimpleStringLoopComp(List<String> items) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <ul>
-                @for (item : items)
+                @for (item : items) {
                     <li>${item}</li>
-                @end
+                }
                 </ul>
                 """;
         }
@@ -27,29 +27,29 @@ public class ForLoopTest {
 
     public record ItemLoopComp(List<ItemRecord> items) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="item-list">
-                @for (item : items)
+                @for (item : items) {
                     <div class="item-card">
                         <h3>${item.name}</h3>
-                        @if (item.category == 'ELECTRONICS')
+                        @if (item.category == 'ELECTRONICS') {
                             <span class="badge-tech">Tech</span>
-                        @elseif (item.category == 'BOOKS')
+                        } @elseif (item.category == 'BOOKS') {
                             <span class="badge-book">Book</span>
-                        @else
+                        } @else {
                             <span class="badge-other">Other</span>
-                        @end
+                        }
 
-                        @if (item.active)
+                        @if (item.active) {
                             <span class="status-active">Available</span>
-                        @else
+                        } @else {
                             <span class="status-out">Out of Stock</span>
-                        @end
+                        }
                     </div>
-                @else
+                } @else {
                     <div class="empty-state">No items available.</div>
-                @end
+                }
                 </div>
                 """;
         }
@@ -59,21 +59,21 @@ public class ForLoopTest {
 
     public record NestedForComp(List<Department> departments) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="org-chart">
-                @for (dept : departments)
+                @for (dept : departments) {
                     <div class="dept">
                         <h2>Department: ${dept.name}</h2>
                         <ul>
-                        @for (emp : dept.employees)
+                        @for (emp : dept.employees) {
                             <li>${emp} (${dept.name})</li>
-                        @else
+                        } @else {
                             <li class="no-emp">No employees</li>
-                        @end
+                        }
                         </ul>
                     </div>
-                @end
+                }
                 </div>
                 """;
         }
@@ -81,14 +81,14 @@ public class ForLoopTest {
 
     public record OptionalLoopComp(Optional<List<String>> tags) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div class="tags">
-                @for (tag : tags)
+                @for (tag : tags) {
                     <span class="tag">#${tag}</span>
-                @else
+                } @else {
                     <span class="no-tags">No tags</span>
-                @end
+                }
                 </div>
                 """;
         }
@@ -98,7 +98,7 @@ public class ForLoopTest {
     @DisplayName("@for (item : items) iterates collection cleanly")
     void testSimpleStringLoop() {
         SimpleStringLoopComp comp = new SimpleStringLoopComp(List.of("Apple", "Banana", "Cherry"));
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
 
         assertTrue(html.contains("<li>Apple</li>"));
         assertTrue(html.contains("<li>Banana</li>"));
@@ -113,7 +113,7 @@ public class ForLoopTest {
             new ItemRecord("Clean Code", "BOOKS", 45, true),
             new ItemRecord("Coffee Mug", "HOME", 15, false)
         ));
-        String htmlFilled = filledComp.render();
+        String htmlFilled = JssrComponent.render(filledComp);
 
         assertTrue(htmlFilled.contains("<h3>Laptop</h3>"));
         assertTrue(htmlFilled.contains("badge-tech"));
@@ -129,7 +129,7 @@ public class ForLoopTest {
 
         // Test Empty List @else fallback
         ItemLoopComp emptyComp = new ItemLoopComp(List.of());
-        String htmlEmpty = emptyComp.render();
+        String htmlEmpty = JssrComponent.render(emptyComp);
         assertTrue(htmlEmpty.contains("No items available."));
         assertFalse(htmlEmpty.contains("item-card"));
     }
@@ -142,7 +142,7 @@ public class ForLoopTest {
             new Department("Marketing", List.of()),
             new Department("Design", List.of("Charlie"))
         ));
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
 
         assertTrue(html.contains("Department: Engineering"));
         assertTrue(html.contains("<li>Alice (Engineering)</li>"));
@@ -159,12 +159,12 @@ public class ForLoopTest {
     @DisplayName("@for loop handles Optional<Collection<?>> correctly")
     void testOptionalCollectionLoop() {
         OptionalLoopComp presentComp = new OptionalLoopComp(Optional.of(List.of("java", "jssr")));
-        String htmlPresent = presentComp.render();
+        String htmlPresent = JssrComponent.render(presentComp);
         assertTrue(htmlPresent.contains("#java"));
         assertTrue(htmlPresent.contains("#jssr"));
 
         OptionalLoopComp emptyComp = new OptionalLoopComp(Optional.empty());
-        String htmlEmpty = emptyComp.render();
+        String htmlEmpty = JssrComponent.render(emptyComp);
         assertTrue(htmlEmpty.contains("No tags"));
     }
 }

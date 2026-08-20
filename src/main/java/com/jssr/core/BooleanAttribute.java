@@ -40,12 +40,12 @@ public record BooleanAttribute(String name, boolean present) implements JssrComp
     }
 
     @Override
-    public String template() {
+    public String render() {
         return present ? name : "";
     }
 
     @Override
     public String toString() {
-        return template();
+        return render();
     }
 }

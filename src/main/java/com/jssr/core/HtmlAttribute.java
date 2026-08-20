@@ -45,7 +45,7 @@ public record HtmlAttribute(String name, String value) implements JssrComponent 
     }
 
     @Override
-    public String template() {
+    public String render() {
         if (value == null) {
             return name;
         }
@@ -54,6 +54,6 @@ public record HtmlAttribute(String name, String value) implements JssrComponent 
 
     @Override
     public String toString() {
-        return template();
+        return render();
     }
 }

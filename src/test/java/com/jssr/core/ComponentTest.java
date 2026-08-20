@@ -22,14 +22,14 @@ class ComponentTest {
 
     public record UserPage(String username) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<h1>${username}</h1>";
         }
     }
 
     public record ArticlePage(String title, RawHtml content, JssrComponent badge) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <article>
                     <h2>${title}</h2>
@@ -42,28 +42,28 @@ class ComponentTest {
 
     public record Link(SafeUrl href, String label) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a href=\"${href}\">${label}</a>";
         }
     }
 
     public record UnsafeStringLink(String href, String label) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a href=\"${href}\">${label}</a>";
         }
     }
 
     public record Parent(SafeUrl href, String label) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<Link href=\"${href}\" label=\"${label}\" />";
         }
     }
 
     public record UserPageWithCard(String username) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <Card>
                     <p>${username}</p>
@@ -74,49 +74,49 @@ class ComponentTest {
 
     public record CascadingExample(String first, String second) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<p>${first}</p>";
         }
     }
 
     public record HtmxButton(String hxGet, String label) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button hx-get=\"${hxGet}\">${label}</button>";
         }
     }
 
     public record ApiButton(String endpoint) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button data-endpoint=\"${endpoint}\">Call API</button>";
         }
     }
 
     public record TaskItem(MixedStatus status) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "status=${status}";
         }
     }
 
     record PackagePrivateCard(String title) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"card\">${title}</div>";
         }
     }
 
     public record Card(RawHtml children) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"card\">${children}</div>";
         }
     }
 
     public record Self() implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<Self />";
         }
     }
@@ -141,7 +141,7 @@ class ComponentTest {
             Status status
     ) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "amount=" + amount +
                     ", discount=" + discount +
                     ", shipping=" + shipping +
@@ -164,14 +164,14 @@ class ComponentTest {
 
     public record Badge(String text) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<span class=\"badge\">${text}</span>";
         }
     }
 
     public record Container(String name) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
                     <Link href="/users/42" label="View User" />
@@ -191,14 +191,14 @@ class ComponentTest {
             Optional<Boolean> flag
     ) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return text.orElse("null") + "|" + amount.orElse(0.0) + "|" + weight.orElse(0.0f) + "|" + count.orElse(0) + "|" + flag.orElse(false);
         }
     }
 
     public record DefaultWrapper() implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<TestDefaults />";
         }
     }
@@ -207,49 +207,49 @@ class ComponentTest {
 
     public record NestedPropComponent(UserProfile user) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<h1>${user.name}</h1>";
         }
     }
 
     public record UnquotedAttrComponent(String title) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div title=${title}>Hello</div>";
         }
     }
 
     public record FreeStandingStringComponent(String extra) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button ${extra}>Click</button>";
         }
     }
 
     public record FreeStandingBooleanComponent(BooleanAttribute activeAttr, HtmlAttribute dataAttr, boolean disabled) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<input ${activeAttr} ${dataAttr} ${disabled} />";
         }
     }
 
     public record SrcdocComponent(String html) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<iframe srcdoc=\"${html}\"></iframe>";
         }
     }
 
     public record AlpineComponent(String expr) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div x-init=\"${expr}\">Alpine</div>";
         }
     }
 
     public record HtmxOnComponent(String handler) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button hx-on:click=\"${handler}\">HTMX</button>";
         }
     }
@@ -297,7 +297,7 @@ class ComponentTest {
     @DisplayName("Single-pass variable interpolation should prevent cascading placeholder evaluation")
     void testSinglePassVariableInterpolation() {
         CascadingExample example = new CascadingExample("${second}", "SECRET");
-        String html = example.render();
+        String html = JssrComponent.render(example);
 
         assertEquals("<p>${second}</p>", html);
         assertFalse(html.contains("SECRET"));
@@ -316,7 +316,7 @@ class ComponentTest {
     @DisplayName("SafeUrl should be HTML-escaped inside HTML attributes to prevent attribute injection XSS")
     void testSafeUrlAttributeInjectionPrevention() {
         Link link = new Link(SafeUrl.of("https://example.com/\" onmouseover=\"alert(1)"), "Click");
-        String html = link.render();
+        String html = JssrComponent.render(link);
 
         assertTrue(html.contains("href=\"https://example.com/&quot; onmouseover=&quot;alert(1)\""));
         assertFalse(html.contains("\" onmouseover=\""));
@@ -326,7 +326,7 @@ class ComponentTest {
     @DisplayName("SafeUrl should decode HTML entities before checking scheme to block entity-encoded javascript: XSS")
     void testSafeUrlHtmlEntityBypassPrevention() {
         Link link = new Link(SafeUrl.of("java&#115;cript:alert(1)"), "Click");
-        String html = link.render();
+        String html = JssrComponent.render(link);
 
         assertTrue(html.contains("href=\"about:blank\""));
         assertFalse(html.contains("javascript:"));
@@ -336,7 +336,7 @@ class ComponentTest {
     @DisplayName("Paired RawHtml children should preserve pre-escaped user data without re-activating XSS tags")
     void testPairedRawHtmlChildrenXssPreservation() {
         UserPageWithCard page = new UserPageWithCard("<img src=x onerror=alert(1)>");
-        String html = page.render();
+        String html = JssrComponent.render(page);
 
         assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
         assertFalse(html.contains("<img src=x onerror=alert(1)>"));
@@ -353,17 +353,17 @@ class ComponentTest {
     @DisplayName("HTML interpolation should be HTML-escaped by default to prevent XSS")
     void testHtmlEscapingByDefault() {
         UserPage xss = new UserPage("<script>alert(1)</script>");
-        assertEquals("<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>", xss.render());
+        assertEquals("<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>", JssrComponent.render(xss));
 
         UserPage specialChars = new UserPage("Fish & Chips <Salt> \"Pepper\" 'Vinegar'");
-        assertEquals("<h1>Fish &amp; Chips &lt;Salt&gt; &quot;Pepper&quot; &#39;Vinegar&#39;</h1>", specialChars.render());
+        assertEquals("<h1>Fish &amp; Chips &lt;Salt&gt; &quot;Pepper&quot; &#39;Vinegar&#39;</h1>", JssrComponent.render(specialChars));
     }
 
     @Test
     @DisplayName("Parent-to-child dynamic props containing HTML entities or & should NOT be double-escaped")
     void testParentToChildPropsNoDoubleEscaping() {
         Parent parent = new Parent(SafeUrl.of("/users?a=1&b=2"), "Tom & Jerry");
-        String html = parent.render();
+        String html = JssrComponent.render(parent);
 
         assertEquals("<a href=\"/users?a=1&amp;b=2\">Tom &amp; Jerry</a>", html);
         assertFalse(html.contains("&amp;amp;"));
@@ -391,7 +391,7 @@ class ComponentTest {
     @DisplayName("Component recursion depth exceeding limit should throw an IllegalStateException instead of StackOverflowError")
     void testRecursionLimitProtection() {
         Exception exception = assertThrows(IllegalStateException.class, () -> {
-            new Self().render();
+            JssrComponent.render(new Self());
         });
         assertTrue(exception.getMessage().contains("recursion limit exceeded"));
     }
@@ -407,7 +407,7 @@ class ComponentTest {
     @DisplayName("Mixed-case enum constants like InProgress or Completed should convert correctly")
     void testMixedCaseEnumParsing() {
         TaskItem task = new TaskItem(MixedStatus.InProgress);
-        assertEquals("status=InProgress", task.render());
+        assertEquals("status=InProgress", JssrComponent.render(task));
 
         String html = JssrComponent.processCustomTags("<TaskItem status=\"InProgress\" />");
         assertEquals("status=InProgress", html);
@@ -426,7 +426,7 @@ class ComponentTest {
         Badge badge = new Badge("Pro User");
         ArticlePage article = new ArticlePage("Safety Guide", RawHtml.of("<p>Paragraph with <b>bold</b> text.</p>"), badge);
 
-        String rendered = article.render();
+        String rendered = JssrComponent.render(article);
         assertTrue(rendered.contains("<h2>Safety Guide</h2>"));
         assertTrue(rendered.contains("<div class=\"content\"><p>Paragraph with <b>bold</b> text.</p></div>"));
         assertTrue(rendered.contains("<div class=\"badge\"><span class=\"badge\">Pro User</span></div>"));
@@ -436,7 +436,7 @@ class ComponentTest {
     @DisplayName("Component attributes containing '/' such as URLs and HTMX routes should parse correctly")
     void testAttributeUrlsParsing() {
         Container container = new Container("Dashboard");
-        String html = container.render();
+        String html = JssrComponent.render(container);
 
         assertTrue(html.contains("<a href=\"/users/42\">View User</a>"));
         assertTrue(html.contains("<button hx-get=\"/tasks/42\">Fetch Task</button>"));
@@ -447,7 +447,7 @@ class ComponentTest {
     @DisplayName("Scalar properties including double, float, short, byte, char, wrapper types, and Enums should convert correctly")
     void testScalarPropertyConversions() {
         Container container = new Container("Test");
-        String html = container.render();
+        String html = JssrComponent.render(container);
 
         assertTrue(html.contains("amount=19.95"));
         assertTrue(html.contains("discount=2.5"));
@@ -472,34 +472,34 @@ class ComponentTest {
     @DisplayName("Missing component attributes with Optional types should fall back to Optional.empty()")
     void testMissingAttributesDefaultValues() {
         DefaultWrapper wrapper = new DefaultWrapper();
-        String result = wrapper.render();
+        String result = JssrComponent.render(wrapper);
         assertEquals("null|0.0|0.0|0|false", result);
     }
 
     public record ScriptComponent(String data) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<script>const val = \"${data}\";</script>";
         }
     }
 
     public record StyleComponent(String color) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<style>body { color: ${color}; }</style>";
         }
     }
 
     public record CommentComponent(String text) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<!-- ${text} -->";
         }
     }
 
     public record TrustedHtmlComponent(RawHtml html) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div>${html}</div>";
         }
     }
@@ -508,7 +508,7 @@ class ComponentTest {
     @DisplayName("Interpolation inside <script> blocks should throw an IllegalArgumentException")
     void testScriptInterpolationRejection() {
         ScriptComponent comp = new ScriptComponent("hello");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("is not allowed inside <script> blocks"));
     }
 
@@ -516,7 +516,7 @@ class ComponentTest {
     @DisplayName("Interpolation inside <style> blocks should throw an IllegalArgumentException")
     void testStyleInterpolationRejection() {
         StyleComponent comp = new StyleComponent("red");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("is not allowed inside <style> blocks"));
     }
 
@@ -524,20 +524,20 @@ class ComponentTest {
     @DisplayName("Interpolation inside HTML comments should throw an IllegalArgumentException")
     void testCommentInterpolationRejection() {
         CommentComponent comp = new CommentComponent("comment");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("is not allowed inside HTML comments"));
     }
 
     public record OnclickComponent(String action) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button onclick=\"${action}\">Click</button>";
         }
     }
 
     public record StyleAttrComponent(String css) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div style=\"${css}\">Content</div>";
         }
     }
@@ -546,7 +546,7 @@ class ComponentTest {
     @DisplayName("Interpolation inside inline event handler attributes (onclick) should throw an IllegalArgumentException")
     void testOnclickInterpolationRejection() {
         OnclickComponent comp = new OnclickComponent("alert(1)");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("is not allowed inside inline event handler attribute"));
     }
 
@@ -554,7 +554,7 @@ class ComponentTest {
     @DisplayName("Interpolation inside inline style attributes (style=) should throw an IllegalArgumentException")
     void testStyleAttrInterpolationRejection() {
         StyleAttrComponent comp = new StyleAttrComponent("color: red");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("is not allowed inside inline style attribute"));
     }
 
@@ -562,15 +562,15 @@ class ComponentTest {
     @DisplayName("JssrComponent.trustedHtml and RawHtml.trustedHtml should create trusted unescaped HTML wrappers")
     void testTrustedHtmlHelper() {
         TrustedHtmlComponent comp = new TrustedHtmlComponent(JssrComponent.trustedHtml("<span>Safe Markup</span>"));
-        assertEquals("<div><span>Safe Markup</span></div>", comp.render());
+        assertEquals("<div><span>Safe Markup</span></div>", JssrComponent.render(comp));
 
         TrustedHtmlComponent comp2 = new TrustedHtmlComponent(RawHtml.trustedHtml("<strong>Bold Text</strong>"));
-        assertEquals("<div><strong>Bold Text</strong></div>", comp2.render());
+        assertEquals("<div><strong>Bold Text</strong></div>", JssrComponent.render(comp2));
     }
 
     public record GenericContainer(String input) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div title='${input}' data-value=\"${input}\"><p>${input}</p><textarea>${input}</textarea></div>";
         }
     }
@@ -588,7 +588,7 @@ class ComponentTest {
 
         for (String payload : xssPayloads) {
             GenericContainer container = new GenericContainer(payload);
-            String html = container.render();
+            String html = JssrComponent.render(container);
 
             assertFalse(html.contains("<script>alert(1)</script>"), "Failed for payload: " + payload);
             assertFalse(html.contains("<img src=x onerror=alert(1)>"), "Failed for payload: " + payload);
@@ -609,7 +609,7 @@ class ComponentTest {
         }
 
         @Override
-        public String template() {
+        public String render() {
             return """
                 <form>
                     <input type="checkbox" name="active" value="true" ${activeChecked} />
@@ -628,7 +628,7 @@ class ComponentTest {
         }
 
         @Override
-        public String template() {
+        public String render() {
             return """
                 <form>
                     <input type="radio" name="role" value="ADMIN" ${adminChecked} />
@@ -642,12 +642,12 @@ class ComponentTest {
     @DisplayName("Checkbox components should render checked attribute based on BooleanAttribute state")
     void testCheckboxFormRendering() {
         CheckboxForm form1 = CheckboxForm.of(true, false);
-        String html1 = form1.render();
+        String html1 = JssrComponent.render(form1);
         assertTrue(html1.contains("name=\"active\" value=\"true\" checked"));
         assertFalse(html1.contains("name=\"notifications\" value=\"true\" checked"));
 
         CheckboxForm form2 = CheckboxForm.of(false, true);
-        String html2 = form2.render();
+        String html2 = JssrComponent.render(form2);
         assertFalse(html2.contains("name=\"active\" value=\"true\" checked"));
         assertTrue(html2.contains("name=\"notifications\" value=\"true\" checked"));
     }
@@ -656,12 +656,12 @@ class ComponentTest {
     @DisplayName("Radio button components should render checked attribute based on selected BooleanAttribute state")
     void testRadioFormRendering() {
         RadioForm adminForm = RadioForm.of("ADMIN");
-        String htmlAdmin = adminForm.render();
+        String htmlAdmin = JssrComponent.render(adminForm);
         assertTrue(htmlAdmin.contains("value=\"ADMIN\" checked"));
         assertFalse(htmlAdmin.contains("value=\"USER\" checked"));
 
         RadioForm userForm = RadioForm.of("USER");
-        String htmlUser = userForm.render();
+        String htmlUser = JssrComponent.render(userForm);
         assertFalse(htmlUser.contains("value=\"ADMIN\" checked"));
         assertTrue(htmlUser.contains("value=\"USER\" checked"));
     }
@@ -674,7 +674,7 @@ class ComponentTest {
     @DisplayName("Free-standing String variable interpolation between attributes should throw IllegalArgumentException")
     void testFreeStandingStringAttributeInjectionRejection() {
         FreeStandingStringComponent comp = new FreeStandingStringComponent("onmouseover=alert(1)");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("free-standing HTML attribute position is forbidden"));
     }
 
@@ -686,7 +686,7 @@ class ComponentTest {
             HtmlAttribute.of("data-test", "val"),
             true
         );
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
         assertTrue(html.contains("<input checked data-test=\"val\" disabled />"));
     }
 
@@ -694,7 +694,7 @@ class ComponentTest {
     @DisplayName("Unquoted HTML attribute interpolation should throw IllegalArgumentException")
     void testUnquotedAttributeInterpolationRejection() {
         UnquotedAttrComponent comp = new UnquotedAttrComponent("hello");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("unquoted HTML attribute is forbidden"));
     }
 
@@ -702,7 +702,7 @@ class ComponentTest {
     @DisplayName("URL attributes (href) strictly require SafeUrl type and reject raw String variables")
     void testUrlAttributeSafeUrlRequirement() {
         UnsafeStringLink link = new UnsafeStringLink("https://example.com", "Click");
-        Exception ex = assertThrows(IllegalArgumentException.class, link::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(link));
         assertTrue(ex.getMessage().contains("requires a SafeUrl field type instead of String"));
     }
 
@@ -710,7 +710,7 @@ class ComponentTest {
     @DisplayName("Variable interpolation inside iframe srcdoc attribute should throw IllegalArgumentException")
     void testSrcdocAttributeRejection() {
         SrcdocComponent comp = new SrcdocComponent("<script>alert(1)</script>");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("inside 'srcdoc' attribute is forbidden"));
     }
 
@@ -718,7 +718,7 @@ class ComponentTest {
     @DisplayName("Variable interpolation inside Alpine.js attributes (x-init, @click, :class) should throw IllegalArgumentException")
     void testAlpineAttributeRejection() {
         AlpineComponent comp = new AlpineComponent("alert(1)");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("inside executable framework attribute"));
     }
 
@@ -726,7 +726,7 @@ class ComponentTest {
     @DisplayName("Variable interpolation inside HTMX event attributes (hx-on:click) should throw IllegalArgumentException")
     void testHtmxAttributeRejection() {
         HtmxOnComponent comp = new HtmxOnComponent("alert(1)");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("inside executable framework attribute"));
     }
 
@@ -734,61 +734,61 @@ class ComponentTest {
     @DisplayName("Nested property evaluation (${user.name}) should resolve correctly")
     void testNestedPropertyAccess() {
         NestedPropComponent comp = new NestedPropComponent(new UserProfile("Charlie"));
-        assertEquals("<h1>Charlie</h1>", comp.render());
+        assertEquals("<h1>Charlie</h1>", JssrComponent.render(comp));
     }
 
     public record InvalidPropComp(String name) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<h1>${usernmae}</h1>";
         }
     }
 
     public record WhitespaceHrefLink(String href) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a href = \"${href}\">Link</a>";
         }
     }
 
     public record WhitespaceOnclickComponent(String action) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button onclick \t = \n \"${action}\">Click</button>";
         }
     }
 
     public record WhitespaceStyleComponent(String css) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div style = \"${css}\">Text</div>";
         }
     }
 
     public record WhitespaceSrcdocComponent(String html) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<iframe srcdoc = \"${html}\"></iframe>";
         }
     }
 
     public record WhitespaceAlpineComponent(String expr) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div x-init = \"${expr}\">Text</div>";
         }
     }
 
     public record WhitespaceHtmxComponent(String handler) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<button hx-on:click = \"${handler}\">Text</button>";
         }
     }
 
     public record RawHtmlAttrComponent(RawHtml title) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div title=\"${title}\">Text</div>";
         }
     }
@@ -797,7 +797,7 @@ class ComponentTest {
     @DisplayName("Unknown template variable placeholders should fail fast with explicit IllegalArgumentException")
     void testUnknownVariableFailFast() {
         InvalidPropComp comp = new InvalidPropComp("Charlie");
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("Unknown JSSR interpolation property '${usernmae}'"));
     }
 
@@ -805,27 +805,27 @@ class ComponentTest {
     @DisplayName("Whitespace around '=' should NOT bypass attribute security context detection")
     void testWhitespaceAroundEqualsAttributeProtection() {
         // href = "${href}" with raw String should require SafeUrl
-        Exception ex1 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceHrefLink("javascript:alert(1)").render());
+        Exception ex1 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceHrefLink("javascript:alert(1)")));
         assertTrue(ex1.getMessage().contains("requires a SafeUrl field type"));
 
         // onclick = "${action}" should be rejected
-        Exception ex2 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceOnclickComponent("alert(1)").render());
+        Exception ex2 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceOnclickComponent("alert(1)")));
         assertTrue(ex2.getMessage().contains("inline event handler attribute"));
 
         // style = "${css}" should be rejected
-        Exception ex3 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceStyleComponent("color:red").render());
+        Exception ex3 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceStyleComponent("color:red")));
         assertTrue(ex3.getMessage().contains("inline style attribute"));
 
         // srcdoc = "${html}" should be rejected
-        Exception ex4 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceSrcdocComponent("<script>alert(1)</script>").render());
+        Exception ex4 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceSrcdocComponent("<script>alert(1)</script>")));
         assertTrue(ex4.getMessage().contains("inside 'srcdoc' attribute is forbidden"));
 
         // x-init = "${expr}" should be rejected
-        Exception ex5 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceAlpineComponent("alert(1)").render());
+        Exception ex5 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceAlpineComponent("alert(1)")));
         assertTrue(ex5.getMessage().contains("executable framework attribute"));
 
         // hx-on:click = "${handler}" should be rejected
-        Exception ex6 = assertThrows(IllegalArgumentException.class, () -> new WhitespaceHtmxComponent("alert(1)").render());
+        Exception ex6 = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(new WhitespaceHtmxComponent("alert(1)")));
         assertTrue(ex6.getMessage().contains("executable framework attribute"));
     }
 
@@ -868,16 +868,16 @@ class ComponentTest {
     @DisplayName("RawHtml cannot be interpolated inside an HTML tag attribute")
     void testRawHtmlInAttributeRejection() {
         RawHtmlAttrComponent comp = new RawHtmlAttrComponent(RawHtml.of("\" onmouseover=\"alert(1)"));
-        Exception ex = assertThrows(IllegalArgumentException.class, comp::render);
+        Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("RawHtml cannot be interpolated inside an HTML attribute"));
     }
 
     public record ObjectDataComp(String resource) implements JssrComponent {
-        @Override public String template() { return "<object data=\"${resource}\"></object>"; }
+        @Override public String render() { return "<object data=\"${resource}\"></object>"; }
     }
 
     public record SafeObjectDataComp(SafeUrl resource) implements JssrComponent {
-        @Override public String template() { return "<object data=\"${resource}\"></object>"; }
+        @Override public String render() { return "<object data=\"${resource}\"></object>"; }
     }
 
     @Test
@@ -885,12 +885,12 @@ class ComponentTest {
     void testObjectDataUrlAttributeProtection() {
         // String resource should be rejected
         ObjectDataComp unsafeComp = new ObjectDataComp("javascript:alert(1)");
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, unsafeComp::render);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(unsafeComp));
         assertTrue(ex.getMessage().contains("inside URL attribute 'data' requires a SafeUrl field type"));
 
         // SafeUrl resource should render safely
         SafeObjectDataComp safeComp = new SafeObjectDataComp(SafeUrl.of("/media/widget.swf"));
-        assertEquals("<object data=\"/media/widget.swf\"></object>", safeComp.render());
+        assertEquals("<object data=\"/media/widget.swf\"></object>", JssrComponent.render(safeComp));
     }
 
     @Test
@@ -903,19 +903,19 @@ class ComponentTest {
     }
 
     public record UnsafeSrcSetComp(String srcset) implements JssrComponent {
-        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+        @Override public String render() { return "<img srcset=\"${srcset}\" />"; }
     }
 
     public record UnsafeSrcSetSafeUrlComp(SafeUrl srcset) implements JssrComponent {
-        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+        @Override public String render() { return "<img srcset=\"${srcset}\" />"; }
     }
 
     public record SafeSrcSetComp(SafeSrcSet srcset) implements JssrComponent {
-        @Override public String template() { return "<img srcset=\"${srcset}\" />"; }
+        @Override public String render() { return "<img srcset=\"${srcset}\" />"; }
     }
 
     public record ImagePreloadComp(SafeSrcSet srcset) implements JssrComponent {
-        @Override public String template() { return "<link rel=\"preload\" as=\"image\" imagesrcset=\"${srcset}\" />"; }
+        @Override public String render() { return "<link rel=\"preload\" as=\"image\" imagesrcset=\"${srcset}\" />"; }
     }
 
     @Test
@@ -923,16 +923,16 @@ class ComponentTest {
     void testSafeSrcSetMultiUrlSanitization() {
         // Raw String and raw SafeUrl must be rejected
         UnsafeSrcSetComp unsafe1 = new UnsafeSrcSetComp("https://safe.example/a.png 1x, javascript:alert(1) 2x");
-        assertThrows(IllegalArgumentException.class, unsafe1::render);
+        assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(unsafe1));
 
         UnsafeSrcSetSafeUrlComp unsafe2 = new UnsafeSrcSetSafeUrlComp(SafeUrl.of("https://safe.example/a.png 1x, javascript:alert(1) 2x"));
-        assertThrows(IllegalArgumentException.class, unsafe2::render);
+        assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(unsafe2));
 
         // SafeSrcSet must sanitize individual candidates
         SafeSrcSet safeSet = SafeSrcSet.of("https://safe.example/a.png 1x, javascript:alert(1) 2x,\t/img/c.png 1000w");
         SafeSrcSetComp comp = new SafeSrcSetComp(safeSet);
 
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
         assertTrue(html.contains("https://safe.example/a.png 1x"));
         assertTrue(html.contains("about:blank 2x"));
         assertTrue(html.contains("/img/c.png 1000w"));
@@ -940,20 +940,20 @@ class ComponentTest {
 
         // Verify imagesrcset on <link rel="preload">
         ImagePreloadComp preloadComp = new ImagePreloadComp(safeSet);
-        String preloadHtml = preloadComp.render();
+        String preloadHtml = JssrComponent.render(preloadComp);
         assertTrue(preloadHtml.contains("imagesrcset=\"https://safe.example/a.png 1x, about:blank 2x, /img/c.png 1000w\""));
     }
 
     public record UnsafePingComp(String urls) implements JssrComponent {
-        @Override public String template() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
+        @Override public String render() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
     }
 
     public record SafeUrlPingComp(SafeUrl urls) implements JssrComponent {
-        @Override public String template() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
+        @Override public String render() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
     }
 
     public record SafePingComp(SafeUrlList urls) implements JssrComponent {
-        @Override public String template() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
+        @Override public String render() { return "<a href=\"/link\" ping=\"${urls}\">Click</a>"; }
     }
 
     @Test
@@ -961,16 +961,16 @@ class ComponentTest {
     void testSafeUrlListPingSanitization() {
         // Raw String and raw SafeUrl MUST be rejected (ping requires SafeUrlList ONLY)
         UnsafePingComp unsafeString = new UnsafePingComp("https://analytics.org/ping javascript:alert(1)");
-        assertThrows(IllegalArgumentException.class, unsafeString::render);
+        assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(unsafeString));
 
         SafeUrlPingComp unsafeSafeUrl = new SafeUrlPingComp(SafeUrl.of("https://analytics.org/ping"));
-        assertThrows(IllegalArgumentException.class, unsafeSafeUrl::render);
+        assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(unsafeSafeUrl));
 
         // SafeUrlList must sanitize individual URLs and convert non-HTTP (mailto:, tel:, javascript:) to about:blank
         SafeUrlList list = SafeUrlList.of("https://analytics.org/ping mailto:admin@org javascript:alert(1) http://metrics.com");
         SafePingComp comp = new SafePingComp(list);
 
-        String html = comp.render();
+        String html = JssrComponent.render(comp);
         assertTrue(html.contains("https://analytics.org/ping"));
         assertTrue(html.contains("about:blank"));
         assertTrue(html.contains("http://metrics.com"));

@@ -216,7 +216,7 @@ public final class JssrPrecompiler {
     private static CompiledTemplateExecutable createFallbackExecutable() {
         return (component, localScope, sb) -> {
             if (component == null) return;
-            String rawHtml = component.template();
+            String rawHtml = component.render();
             if (rawHtml == null || rawHtml.isBlank()) {
                 if (rawHtml != null) sb.append(rawHtml);
                 return;

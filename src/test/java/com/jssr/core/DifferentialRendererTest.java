@@ -34,7 +34,7 @@ public class DifferentialRendererTest {
 
     private void assertDifferentialParity(JssrComponent component, Class<? extends JssrComponent> clazz) {
         JssrPrecompiler.enableGlobalPrecompilation(false);
-        String interpreted = component.render();
+        String interpreted = JssrComponent.render(component);
 
         JssrPrecompiler.enableGlobalPrecompilation(true);
         String precompiled = component.renderPrecompiled();
@@ -45,42 +45,42 @@ public class DifferentialRendererTest {
 
     public record SimpleTextCard(String name, int age) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"user\"><h1>${name}</h1><p>Age: ${age}</p></div>";
         }
     }
 
     public record QuotedAttrCard(String title, String cls) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"${cls}\" title=\"${title}\">Card</div>";
         }
     }
 
     public record SafeUrlCard(SafeUrl url) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a href=\"${url}\">Link</a>";
         }
     }
 
     public record SafeSrcSetCard(SafeSrcSet srcset) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<img srcset=\"${srcset}\">";
         }
     }
 
     public record SafeUrlListCard(SafeUrlList ping) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<a ping=\"${ping}\">Track</a>";
         }
     }
 
     public record FreeStandingBoolCard(boolean checked) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<input ${checked} />";
         }
     }
@@ -88,48 +88,48 @@ public class DifferentialRendererTest {
     public record UserDetail(boolean active) {}
     public record FreeStandingNestedBoolCard(UserDetail user) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div ${user.active}>User</div>";
         }
     }
 
     public record FreeStandingBoolAttrCard(BooleanAttribute disabled) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<input ${disabled} />";
         }
     }
 
     public record FreeStandingHtmlAttrCard(HtmlAttribute custom) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<input ${custom} />";
         }
     }
 
     public record ChildComponentCard(String value) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<span>${value}</span>";
         }
     }
 
     public record ParentComponentAttrCard(ChildComponentCard child) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div title=\"${child}\">Test</div>";
         }
     }
 
     public record TreeNode(String name, TreeNode child) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
                     <span>${name}</span>
-                    @if (child != null)
+                    @if (child != null) {
                         ${child}
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -146,51 +146,51 @@ public class DifferentialRendererTest {
         Character charVal
     ) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div>${flag},${num},${longNum},${doubleNum},${floatNum},${shortNum},${byteNum},${charVal}</div>";
         }
     }
 
     public record BoxedFreeStandingCard(Boolean checked) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<input ${checked} />";
         }
     }
 
     public record PrimitiveTypesCard(short s, byte b, char c) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div>${s}-${b}-${c}</div>";
         }
     }
 
     public record RawHtmlBodyCard(RawHtml raw) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div class=\"content\">${raw}</div>";
         }
     }
 
     public record OptionalTextCard(Optional<String> name) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return "<div>${name}</div>";
         }
     }
 
     public record ControlFlowIfCard(int status) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @if (status == 200)
+                    @if (status == 200) {
                         <span class="ok">Success</span>
-                    @elseif (status == 404)
+                    } @elseif (status == 404) {
                         <span class="warn">Not Found</span>
-                    @else
+                    } @else {
                         <span class="err">Error</span>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -198,14 +198,14 @@ public class DifferentialRendererTest {
 
     public record ControlFlowForCard(List<String> items) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <ul>
-                    @for (item : items)
+                    @for (item : items) {
                         <li>${item}</li>
-                    @else
+                    } @else {
                         <li class="empty">Empty</li>
-                    @end
+                    }
                 </ul>
                 """;
         }
@@ -213,17 +213,20 @@ public class DifferentialRendererTest {
 
     public record ControlFlowSwitchCard(String role) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @switch (role)
-                        @case ("admin")
+                    @switch (role) {
+                        @case ("admin") {
                             <p>Admin Access</p>
-                        @case ("user")
+                        }
+                        @case ("user") {
                             <p>User Access</p>
-                        @default
+                        }
+                        @default {
                             <p>Guest Access</p>
-                    @end
+                        }
+                    }
                 </div>
                 """;
         }
@@ -231,16 +234,16 @@ public class DifferentialRendererTest {
 
     public record ControlFlowTryCard() implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @try
+                    @try {
                         <p>OK</p>
-                    @catch(err)
+                    } @catch(err) {
                         <p class="err">Caught: ${err.message}</p>
-                    @finally
+                    } @finally {
                         <p class="foot">Done</p>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -248,25 +251,25 @@ public class DifferentialRendererTest {
 
     public record ControlFlowThrowCard() implements JssrComponent {
         @Override
-        public String template() {
-            return "<div>@try@throw(\"Simulated failure\")@catch(err)<p class=\"err\">Caught: ${err.message}</p>@end</div>";
+        public String render() {
+            return "<div>@try { @throw(\"Simulated failure\") } @catch(err) { <p class=\"err\">Caught: ${err.message}</p> }</div>";
         }
     }
 
     public record ControlFlowLoopControlCard(List<Integer> nums) implements JssrComponent {
         @Override
-        public String template() {
+        public String render() {
             return """
                 <div>
-                    @for (n : nums)
-                        @if (n < 0)
+                    @for (n : nums) {
+                        @if (n < 0) {
                             @continue
-                        @end
-                        @if (n > 10)
+                        }
+                        @if (n > 10) {
                             @break
-                        @end
+                        }
                         <span>${n}</span>
-                    @end
+                    }
                 </div>
                 """;
         }
@@ -347,6 +350,32 @@ public class DifferentialRendererTest {
         String compiled = card.renderPrecompiled();
         assertFalse(compiled.contains("\" onmouseover=\""), "Quotes inside child component rendered in attribute must be HTML-escaped");
         assertTrue(compiled.contains("&amp;quot;"), "Quotes inside child component rendered in attribute must be HTML-escaped");
+    }
+
+    public record ForSimpleLoopCard(java.util.List<String> items) implements JssrComponent {
+        @Override
+        public String render() {
+            return "@for (item : items) { <li>${item}</li> }";
+        }
+    }
+
+    public record ForVarLoopCard(java.util.List<String> items) implements JssrComponent {
+        @Override
+        public String render() {
+            return "@for (var item : items) { <li>${item}</li> }";
+        }
+    }
+
+    @Test
+    @DisplayName("Differential test: for loop syntax variants (@for(item : list) and @for(var item : list))")
+    void testForLoopSyntaxVariantsDifferential() {
+        java.util.List<String> list = java.util.List.of("Alpha", "Beta", "Gamma");
+        assertDifferentialParity(new ForSimpleLoopCard(list), ForSimpleLoopCard.class);
+        assertDifferentialParity(new ForVarLoopCard(list), ForVarLoopCard.class);
+        
+        String simpleOutput = new ForSimpleLoopCard(list).renderPrecompiled();
+        String varOutput = new ForVarLoopCard(list).renderPrecompiled();
+        assertEquals(simpleOutput, varOutput, "Output for @for(item : list) and @for(var item : list) must be identical");
     }
 
     @Test

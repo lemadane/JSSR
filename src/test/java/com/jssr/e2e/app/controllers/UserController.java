@@ -26,7 +26,7 @@ public class UserController {
     @GetMapping("/")
     public JssrComponent index() {
         UserList listComponent = renderUserListComponent(repository.findAll(), "", null, null);
-        return new PageLayout("User Management", listComponent.render());
+        return new PageLayout("User Management", JssrComponent.render(listComponent));
     }
 
     @GetMapping("/users")
@@ -160,7 +160,7 @@ public class UserController {
         com.jssr.e2e.app.components.SystemOverviewDashboardCard card = 
             new com.jssr.e2e.app.components.SystemOverviewDashboardCard(account, projects, fault);
             
-        return new PageLayout("Operations Control Center", card.render());
+        return new PageLayout("Operations Control Center", JssrComponent.render(card));
     }
 
     private UserList renderUserListComponent(List<User> users, String query, String toastMsg, String toastType) {

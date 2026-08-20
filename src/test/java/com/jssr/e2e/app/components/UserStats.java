@@ -5,7 +5,7 @@ import com.jssr.core.JssrComponent;
 public record UserStats(long total, long active, long admins) implements JssrComponent {
 
     @Override
-    public String template() {
+    public String render() {
         return """
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <!-- Total Users Card -->
