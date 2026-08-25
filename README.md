@@ -983,9 +983,9 @@ Run unit, parser fuzz testing, packaging isolation, executable JAR verification,
 
 **Credits & Attibution**
 
-Concept and Designed By: Lemuel Adane
-Coded By: Google Antigravity
-Product Testd and QA: OpenAI Codex
+- Concept and Designed By: Lemuel Adane
+- Coded By: Google Antigravity
+- Product Testd and QA: OpenAI Codex
 
 ---
 
