@@ -370,7 +370,7 @@ public record ResilientDashboardCard(String validStatus, boolean triggerFault) i
 
 ---
 
-## ⚡ Precompiled JVM Bytecode Engine (PTE Architecture)
+## Precompiled JVM Bytecode Engine (PTE Architecture)
 
 JSSR includes a native **Precompiled JVM Bytecode Engine** modeled after **PTE ([Piped Template Engine](https://github.com/lemadane/piped-template-engine-java))**.
 
