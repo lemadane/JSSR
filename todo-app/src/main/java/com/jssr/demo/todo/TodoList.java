@@ -11,15 +11,15 @@ public record TodoList(List<Todo> todos) implements JssrComponent {
 
     @Override
     public String render() {
-        List<Todo> safeTodoList = todos == null ? List.of() : todos;
-        return JssrComponent.render(this, java.util.Map.of("rows", safeTodoList), """
-            <ul class="list">
-                @for (row : rows) {
-                    <TodoRow todo="${row}" />
-                } @else {
-                    <li class="empty">No tasks yet. Add one above.</li>
-                }
-            </ul>
-            """);
+        return """
+                <ul class="list">
+                   <!--if(todos = null && todos.size() > 0) { // happens in the background that is why we have @else-->
+                    @for (todo : todos) {
+                        <TodoRow todo="${todo}" />
+                    } @else {
+                        <li class="empty">No tasks yet. Add one above.</li>
+                    }
+                </ul>
+        """;
     }
 }
