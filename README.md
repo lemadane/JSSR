@@ -923,7 +923,7 @@ System.out.printf("Compiled: %d, Fallback: %d, Failed: %d (Time: %d ms)%n",
 
 ---
 
-## 📊 JMH Performance Benchmarking Suite
+## JMH Performance Benchmarking Suite
 
 JSSR includes a dedicated [JMH (Java Microbenchmark Harness)](https://github.com/openjdk/jmh) benchmarking suite to measure exact rendering throughput under controlled JVM environments (warm-up, JIT compilation, GC control).
 
@@ -943,7 +943,7 @@ Benchmarks under `src/jmh/java/com/jssr/benchmark/` measure:
 
 ---
 
-## 🛠️ VS Code Extension & IDE Tooling
+## VS Code Extension & IDE Tooling
 
 JSSR includes a native VS Code extension located in [`editors/vscode/`](file:///home/lem/Projects/java/JSSR/editors/vscode) providing automatic HTML/JSX syntax highlighting, template auto-formatting (`Shift+Alt+F`), JSSR control flow directive colorization, and code snippets (`jssr-comp`, `j-if`, `j-for`, `j-switch`, `j-try`) inside Java 17 multiline text blocks (`"""..."""`).
 
