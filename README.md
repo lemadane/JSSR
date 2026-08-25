@@ -37,6 +37,109 @@ Traditional Java web development forces developers into a hard choice between tr
 
 ---
 
+## Todo App Demo (Spring MVC + JSSR Components)
+
+This repository includes a runnable demo subproject at `todo-app` that showcases React-like server component composition using JSSR record components.
+
+### What This Demo Shows
+
+- **Record-as-props component model** (immutable record inputs)
+- **Nested JSX-style custom tags** (`<TodoForm />`, `<TodoList />`, `<TodoRow />`, etc.)
+- **Server-rendered CRUD-style actions** (add, toggle, edit, delete)
+- **Type-preserving custom tag prop passing** (objects/lists passed through custom tags, not degraded to raw strings)
+
+### Component Tree
+
+The page composition mirrors a React-style tree:
+
+`TodoPage` -> `TodoForm` + `TodoList`  
+`TodoList` -> `TodoRow`  
+`TodoRow` -> `TodoActionBar`  
+`TodoActionBar` -> `TodoItemActions`
+
+Domain model:
+
+- `Todo` is a Java record (`id`, `title`, `completed`) with immutable state helpers (`toggle`, `withTitle`)
+
+### Supported Todo Operations
+
+- Add task
+- Filter tasks by query
+- Toggle done/open state
+- Edit task title
+- Delete task
+- Partial rendering (list-only and stats-only HTML responses)
+
+Delete is rendered as a per-row action button in `TodoItemActions`, and handled by a dedicated controller route.
+
+### HTTP Endpoints
+
+- `GET /` and `GET /todos` -> render full page
+- `POST /todos` -> add task (`application/x-www-form-urlencoded`)
+- `POST /todos/{id}/toggle` -> toggle completion
+- `POST /todos/{id}/edit` -> edit title (`application/x-www-form-urlencoded`)
+- `POST /todos/{id}/delete` -> delete task
+- `GET /todos/fragment/list?q=...` -> list fragment HTML only
+- `GET /todos/fragment/stats` -> stats fragment HTML only
+- `GET /todos/partial/list?q=...` -> partial list HTML alias
+- `GET /todos/partial/stats` -> partial stats HTML alias
+
+### Partial Rendering (Core, No HTMX Required)
+
+JSSR partial rendering in this demo is handled directly at the Spring MVC controller level by returning individual `JssrComponent` fragments.
+
+Examples:
+
+```bash
+# Render only the todo list fragment
+curl -s "http://127.0.0.1:8080/todos/partial/list?q=demo"
+
+# Render only the completed/total stats fragment
+curl -s "http://127.0.0.1:8080/todos/partial/stats"
+```
+
+This works with plain Spring MVC and JSSR converter output, independent of HTMX.
+
+### Run The Demo
+
+From repository root:
+
+```bash
+./gradlew :todo-app:bootRun
+```
+
+Open:
+
+- `http://127.0.0.1:8080/todos`
+
+If you do not see the latest UI actions (like **Delete**), restart `bootRun` to ensure the running server reflects the current source.
+
+### Run Tests (Including Add/Toggle/Delete Flows)
+
+```bash
+./gradlew :todo-app:test
+```
+
+Current demo integration coverage includes:
+
+- Page load smoke test
+- Add + toggle flow test
+- Add + delete flow test
+
+### Key Demo Files
+
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoController.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoPage.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoForm.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoList.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoRow.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoActionBar.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/TodoItemActions.java`
+- `todo-app/src/main/java/com/jssr/demo/todo/Todo.java`
+- `todo-app/src/test/java/com/jssr/demo/todo/TodoAppApplicationTests.java`
+
+---
+
 ## How Variable Interpolation & Security Work
 
 > [!IMPORTANT]

@@ -31,6 +31,12 @@ public interface JssrComponent {
     int MAX_RENDER_DEPTH = 100;
 
     /**
+     * Per-render token table preserving object-valued custom-tag attributes across string interpolation.
+     */
+    ThreadLocal<Map<String, Object>> ATTRIBUTE_OBJECT_BINDINGS = ThreadLocal.withInitial(HashMap::new);
+    ThreadLocal<Integer> ATTRIBUTE_OBJECT_BINDING_SEQ = ThreadLocal.withInitial(() -> 0);
+
+    /**
      * List of HTML attribute names that strictly require a SafeUrl, SafeSrcSet, or SafeUrlList value type.
      * Includes all URL-bearing HTML attributes (href, src, action, formaction, poster, data, srcset, imagesrcset, ping, etc.).
      */
@@ -107,6 +113,11 @@ public interface JssrComponent {
                     + MAX_RENDER_DEPTH + ") for component: " + component.getClass().getSimpleName());
         }
 
+        if (depth == 0) {
+            ATTRIBUTE_OBJECT_BINDINGS.set(new HashMap<>());
+            ATTRIBUTE_OBJECT_BINDING_SEQ.set(0);
+        }
+
         RENDER_DEPTH.set(depth + 1);
         try {
             String rawHtml = explicitRawHtml != null ? explicitRawHtml : component.render();
@@ -120,7 +131,26 @@ public interface JssrComponent {
             return processCustomTags(interpolatedHtml);
         } finally {
             RENDER_DEPTH.set(depth);
+            if (depth == 0) {
+                ATTRIBUTE_OBJECT_BINDINGS.remove();
+                ATTRIBUTE_OBJECT_BINDING_SEQ.remove();
+            }
         }
+    }
+
+    private static String bindAttributeObject(Object value) {
+        int next = ATTRIBUTE_OBJECT_BINDING_SEQ.get() + 1;
+        ATTRIBUTE_OBJECT_BINDING_SEQ.set(next);
+        String token = "__JSSR_OBJ_" + next + "__";
+        ATTRIBUTE_OBJECT_BINDINGS.get().put(token, value);
+        return token;
+    }
+
+    private static Object resolveBoundAttributeObject(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        return ATTRIBUTE_OBJECT_BINDINGS.get().get(token);
     }
 
     static String renderPrecompiled(JssrComponent component, Map<String, Object> localScope) {
@@ -228,6 +258,7 @@ public interface JssrComponent {
         int i = 0;
 
         boolean inTag = false;
+        boolean inCustomTag = false;
         char quoteChar = 0;
         String blockContext = null; // "script", "style", "comment"
         String currentAttr = "";
@@ -333,6 +364,17 @@ public interface JssrComponent {
                                 default -> {}
                             }
 
+                            boolean pureQuotedPlaceholder = i > 0
+                                    && end + 1 < len
+                                    && html.charAt(i - 1) == quoteChar
+                                    && html.charAt(end + 1) == quoteChar;
+
+                            if (inCustomTag && pureQuotedPlaceholder && val != null) {
+                                sb.append(bindAttributeObject(val));
+                                i = end + 1;
+                                continue;
+                            }
+
                             String formattedVal;
                             if (val == null) {
                                 formattedVal = "";
@@ -408,6 +450,24 @@ public interface JssrComponent {
                 }
             } else {
                 if (c == '<') {
+                    inCustomTag = false;
+
+                    int tagNameStart = i + 1;
+                    if (tagNameStart < len && Character.isUpperCase(html.charAt(tagNameStart))) {
+                        int tagNameEnd = tagNameStart;
+                        while (tagNameEnd < len && Character.isLetterOrDigit(html.charAt(tagNameEnd))) {
+                            tagNameEnd++;
+                        }
+
+                        if (tagNameEnd < len) {
+                            char delim = html.charAt(tagNameEnd);
+                            if (delim == ' ' || delim == '\t' || delim == '\n' || delim == '\r' || delim == '/' || delim == '>') {
+                                String tagName = html.substring(tagNameStart, tagNameEnd);
+                                inCustomTag = REGISTRY.containsKey(tagName);
+                            }
+                        }
+                    }
+
                     if (i + 3 < len && html.startsWith("<!--", i)) {
                         blockContext = "comment";
                     } else if (i + 6 < len && html.substring(i, Math.min(i + 7, len)).toLowerCase(Locale.ROOT).startsWith("<script")) {
@@ -454,6 +514,7 @@ public interface JssrComponent {
                             }
                         } else if (c == '>') {
                             inTag = false;
+                            inCustomTag = false;
                             quoteChar = 0;
                             currentAttr = "";
                             pendingAttr = "";
@@ -832,6 +893,13 @@ public interface JssrComponent {
             if (targetType == byte.class) return (byte) 0;
             if (targetType == char.class) return '\0';
             return null;
+        }
+
+        Object boundObject = resolveBoundAttributeObject(rawVal);
+        if (boundObject != null) {
+            if (targetType == Object.class || targetType.isInstance(boundObject) || targetType.isAssignableFrom(boundObject.getClass())) {
+                return boundObject;
+            }
         }
 
         if (targetType == String.class || targetType == Object.class) {

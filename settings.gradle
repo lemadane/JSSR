@@ -13,3 +13,4 @@ plugins {
 rootProject.name = 'JSSR'
 
 include 'integration-tests:boot-jar'
+include 'todo-app'

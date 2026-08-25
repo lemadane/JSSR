@@ -61,6 +61,40 @@ class ComponentTest {
         }
     }
 
+    public record NestedObjectChild(UserProfile user) implements JssrComponent {
+        @Override
+        public String render() {
+            return "<h2>${user.name}</h2>";
+        }
+    }
+
+    public record NestedObjectParent(UserProfile user) implements JssrComponent {
+        @Override
+        public String render() {
+            return "<NestedObjectChild user=\"${user}\" />";
+        }
+    }
+
+    public record NestedListChild(List<String> items) implements JssrComponent {
+        @Override
+        public String render() {
+            return JssrComponent.render(this, java.util.Map.of("rows", items), """
+                <ul>
+                    @for (item : rows) {
+                        <li>${item}</li>
+                    }
+                </ul>
+                """);
+        }
+    }
+
+    public record NestedListParent(List<String> items) implements JssrComponent {
+        @Override
+        public String render() {
+            return "<NestedListChild items=\"${items}\" />";
+        }
+    }
+
     public record UserPageWithCard(String username) implements JssrComponent {
         @Override
         public String render() {
@@ -301,6 +335,20 @@ class ComponentTest {
 
         assertEquals("<p>${second}</p>", html);
         assertFalse(html.contains("SECRET"));
+    }
+
+    @Test
+    @DisplayName("Custom component tag props should preserve object and list types when bound from ${...} attributes")
+    void testTypedCustomTagPropsFromInterpolatedAttributes() {
+        JssrComponent.register("NestedObjectChild", NestedObjectChild.class);
+        JssrComponent.register("NestedListChild", NestedListChild.class);
+
+        String objectHtml = JssrComponent.render(new NestedObjectParent(new UserProfile("Dana")));
+        assertEquals("<h2>Dana</h2>", objectHtml);
+
+        String listHtml = JssrComponent.render(new NestedListParent(List.of("A", "B")));
+        assertTrue(listHtml.contains("<li>A</li>"));
+        assertTrue(listHtml.contains("<li>B</li>"));
     }
 
     @Test
