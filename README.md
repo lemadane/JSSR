@@ -964,49 +964,6 @@ Reload VS Code to enable instant HTML/JSX syntax highlighting and snippets for J
 
 ---
 
-## Library Architecture
-
-`src/main/java` contains the pure, minimal JSSR framework:
-
-```
-JSSR/
-├── .github/workflows/
-│   ├── ci.yml                            # GitHub Actions CI matrix workflow (Java 17, 21, 25 & Boot 3/4)
-│   └── release.yml                       # Release workflow publishing signed JARs, sources, & Javadoc
-├── build.gradle                          # Groovy-Gradle configuration with JMH & Maven publishing
-├── editors/
-│   └── vscode/                           # VS CODE EXTENSION (Syntax Highlighting & Snippets)
-├── jitpack.yml                           # JitPack build configuration
-├── LICENSE                               # MIT License
-├── README.md                             # Documentation
-├── src/
-│   ├── main/
-│   │   └── java/com/jssr/                # PURE REUSABLE JSSR UI LIBRARY
-│   │       ├── core/
-│   │       │   ├── JssrComponent.java    # Core component interface & tag registry
-│   │       │   ├── RawHtml.java          # Wrapper for trusted unescaped HTML
-│   │       │   ├── SafeUrl.java          # Wrapper for URL protocol sanitization
-│   │       │   └── compiler/             # PRECOMPILED JVM BYTECODE ENGINE & AST
-│   │       │       ├── JssrPrecompiler.java       # Cache manager, status API & report generator
-│   │       │       ├── CompilationStatus.java     # Status enum (COMPILED, FALLBACK, FAILED)
-│   │       │       ├── CompilationFailureMode.java# Failure mode strategy
-│   │       │       ├── CompilationReport.java     # Batch precompilation report record
-│   │       │       ├── InMemoryBytecodeCompiler.java# Dynamic in-memory compiler
-│   │       │       ├── JavaCodeGenerator.java     # AST-driven Java source code generator
-│   │       │       └── ast/                       # TEMPLATE AST PARSER & NODES
-│   │       │           ├── TemplateNode.java      # Sealed AST node hierarchy
-│   │       │           └── TemplateParser.java    # Template string to AST parser
-│   │       └── spring/
-│   │           ├── JssrConverter.java    # Converts JssrComponent to HTML HTTP responses
-│   │           └── JssrMvcConfig.java    # Configures Spring MVC converter
-│   ├── jmh/
-│   │   └── java/com/jssr/benchmark/      # JMH PERFORMANCE BENCHMARK SUITE
-│   └── test/
-│       └── java/com/jssr/                # UNIT, PARSER FUZZ, PACKAGING & E2E TEST SUITE
-```
-
----
-
 ## Running Tests
 
 Run unit, parser fuzz testing, packaging isolation, executable JAR verification, and Spring Boot E2E integration tests:

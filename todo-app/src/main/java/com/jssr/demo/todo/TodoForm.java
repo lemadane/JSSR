@@ -16,6 +16,6 @@ public record TodoForm(String query) implements JssrComponent {
                 <input type="text" name="q" value="${query}" placeholder="Filter tasks">
                 <button type="submit">Filter</button>
             </form>
-            """;
+        """;
     }
 }
