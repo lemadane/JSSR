@@ -896,7 +896,7 @@ public record PreferencesForm(
 
 ---
 
-## ⚡ Precompiled AST Engine & Failure Observability
+## Precompiled AST Engine & Failure Observability
 
 JSSR includes a production-grade dynamic in-memory JVM precompiler that parses Record component HTML templates into an Abstract Syntax Tree (AST) (`TemplateNode`, `TemplateParser`) and compiles them into pure JVM bytecode classes (`.class` bytes) loaded in memory using JDK's standard `javax.tools.JavaCompiler`.
 
