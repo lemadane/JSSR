@@ -13,7 +13,6 @@ public record TodoList(List<Todo> todos) implements JssrComponent {
     public String render() {
         return """
                 <ul class="list">
-                   <!--if(todos = null && todos.size() > 0) { // happens in the background that is why we have @else-->
                     @for (todo : todos) {
                         <TodoRow todo="${todo}" />
                     } @else {
