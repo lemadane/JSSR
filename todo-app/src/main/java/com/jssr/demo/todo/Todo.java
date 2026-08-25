@@ -1,6 +1,6 @@
 package com.jssr.demo.todo;
 
-record Todo(long id, String title, boolean completed) {
+public record Todo(long id, String title, boolean completed) {
 
     Todo(long id, String title) {
         this(id, title, false);

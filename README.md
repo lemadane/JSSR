@@ -981,6 +981,12 @@ Run unit, parser fuzz testing, packaging isolation, executable JAR verification,
 
 ---
 
+| Concepted and Designed By | Coded By | Product Tested and QA By |
+| :--- | :--- | :--- |
+| Lemuel Adane | Google Antigravity | OpenAI Codex |
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](file:///home/lem/Projects/java/JSSR/LICENSE).
