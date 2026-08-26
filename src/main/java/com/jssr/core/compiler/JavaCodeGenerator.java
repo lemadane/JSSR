@@ -381,6 +381,9 @@ public final class JavaCodeGenerator {
             } else if (node instanceof TemplateNode.BreakNode) {
                 sb.append(indent).append("break;\n");
                 break;
+            } else if (node instanceof TemplateNode.ReturnNode) {
+                sb.append(indent).append("return;\n");
+                break;
             } else if (node instanceof TemplateNode.SwitchNode switchNode) {
                 int id = varSeq.incrementAndGet();
                 String expr = switchNode.expression().trim();

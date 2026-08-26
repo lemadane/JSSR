@@ -296,4 +296,63 @@ public class ControlFlowTest {
         Exception ex = assertThrows(IllegalArgumentException.class, () -> JssrComponent.render(comp));
         assertTrue(ex.getMessage().contains("Unknown JSSR control flow property 'unknownField'"));
     }
+
+    public record EarlyReturnComp(boolean stopEarly) implements JssrComponent {
+        @Override
+        public String render() {
+            return """
+                <div>
+                    <h1>Header</h1>
+                    @if (stopEarly) {
+                        <p>Stopping early</p>
+                        @return
+                    }
+                    <p>Footer content</p>
+                </div>
+                """;
+        }
+    }
+
+    public record LoopReturnComp(List<String> items) implements JssrComponent {
+        @Override
+        public String render() {
+            return """
+                <ul>
+                    @for (item : items) {
+                        @if (item == 'STOP') {
+                            @return
+                        }
+                        <li>${item}</li>
+                    }
+                </ul>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("@return directive inside @if block early returns execution from caller component")
+    void testEarlyReturnInIfBlock() {
+        EarlyReturnComp stopComp = new EarlyReturnComp(true);
+        String stopHtml = JssrComponent.render(stopComp);
+        assertTrue(stopHtml.contains("<h1>Header</h1>"));
+        assertTrue(stopHtml.contains("<p>Stopping early</p>"));
+        assertFalse(stopHtml.contains("<p>Footer content</p>"));
+
+        EarlyReturnComp continueComp = new EarlyReturnComp(false);
+        String continueHtml = JssrComponent.render(continueComp);
+        assertTrue(continueHtml.contains("<h1>Header</h1>"));
+        assertFalse(continueHtml.contains("<p>Stopping early</p>"));
+        assertTrue(continueHtml.contains("<p>Footer content</p>"));
+    }
+
+    @Test
+    @DisplayName("@return directive inside @for loop halts component execution immediately")
+    void testEarlyReturnInForLoop() {
+        LoopReturnComp comp = new LoopReturnComp(List.of("Alpha", "STOP", "Beta"));
+        String html = JssrComponent.render(comp);
+        assertTrue(html.contains("<li>Alpha</li>"));
+        assertFalse(html.contains("<li>STOP</li>"));
+        assertFalse(html.contains("<li>Beta</li>"));
+        assertFalse(html.contains("</ul>"));
+    }
 }

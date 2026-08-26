@@ -229,6 +229,10 @@ public final class TemplateParser {
                 }
                 nodes.add(new TemplateNode.BreakNode());
                 i += 6;
+            } else if (s.startsWith("@return", i) && isWordBoundary(s, i + 7)) {
+                nodes.add(new TemplateNode.ReturnNode());
+                i += 7;
+                if (i < end && (s.charAt(i) == ':' || s.charAt(i) == ';')) i++;
             } else {
                 nodes.add(new TemplateNode.StaticTextNode("@"));
                 i++;

@@ -1046,11 +1046,11 @@ public interface JssrComponent {
         return new PropertyResult(curr, currType, true);
     }
 
-    enum LoopSignal { NONE, CONTINUE, BREAK }
+    enum LoopSignal { NONE, CONTINUE, BREAK, RETURN }
     record ControlFlowResult(String content, LoopSignal signal) {}
 
     /**
-     * Parse control flow directives (@if, @for, @continue, @break) in component templates.
+     * Parse control flow directives (@if, @for, @continue, @break, @return) in component templates.
      */
     static String processControlFlow(JssrComponent component, String template) {
         return processControlFlow(component, Collections.emptyMap(), template);
@@ -1060,7 +1060,7 @@ public interface JssrComponent {
         if (component == null || template == null || template.isBlank() 
                 || (!template.contains("@if") && !template.contains("@for")
                     && !template.contains("@switch") && !template.contains("@try") && !template.contains("@throw")
-                    && !template.contains("@continue") && !template.contains("@break"))) {
+                    && !template.contains("@continue") && !template.contains("@break") && !template.contains("@return"))) {
             return template == null ? "" : template;
         }
         return parseControlFlowBlocks(component, localScope, template).content();
@@ -1070,7 +1070,7 @@ public interface JssrComponent {
         if (text == null || text.isEmpty() 
                 || (!text.contains("@if") && !text.contains("@for")
                     && !text.contains("@switch") && !text.contains("@try") && !text.contains("@throw")
-                    && !text.contains("@continue") && !text.contains("@break"))) {
+                    && !text.contains("@continue") && !text.contains("@break") && !text.contains("@return"))) {
             return new ControlFlowResult(text == null ? "" : text, LoopSignal.NONE);
         }
 
@@ -1116,6 +1116,12 @@ public interface JssrComponent {
                 return new ControlFlowResult(result.toString(), LoopSignal.CONTINUE);
             } else if (text.startsWith("@break", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
                 return new ControlFlowResult(result.toString(), LoopSignal.BREAK);
+            } else if (text.startsWith("@return", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 7)) {
+                int endIndex = directiveIdx + 7;
+                if (endIndex < len && (text.charAt(endIndex) == ':' || text.charAt(endIndex) == ';')) {
+                    endIndex++;
+                }
+                return new ControlFlowResult(result.toString(), LoopSignal.RETURN);
             } else if (text.startsWith("@throw", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 6)) {
                 int openParen = text.indexOf('(', directiveIdx + 6);
                 int closeParen = (openParen != -1) ? findMatchingParen(text, openParen) : -1;
@@ -1144,8 +1150,11 @@ public interface JssrComponent {
                 curr = blockResult.endIndex;
             } else if (text.startsWith("@for", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 4)) {
                 ForBlockResult blockResult = parseForBlockAt(component, text, directiveIdx);
-                String renderedFor = evaluateForBlockResult(component, localScope, blockResult);
-                result.append(renderedFor);
+                ControlFlowResult evalRes = evaluateForBlockResult(component, localScope, blockResult);
+                result.append(evalRes.content());
+                if (evalRes.signal() != LoopSignal.NONE) {
+                    return new ControlFlowResult(result.toString(), evalRes.signal());
+                }
                 curr = blockResult.endIndex;
             } else if (text.startsWith("@switch", directiveIdx) && isValidDirectiveBoundary(text, directiveIdx, 7)) {
                 SwitchBlockResult blockResult = parseSwitchBlockAt(component, text, directiveIdx);
@@ -1676,7 +1685,7 @@ public interface JssrComponent {
         return new ControlFlowResult("", LoopSignal.NONE);
     }
 
-    private static String evaluateForBlockResult(JssrComponent component, Map<String, Object> localScope, ForBlockResult forResult) {
+    private static ControlFlowResult evaluateForBlockResult(JssrComponent component, Map<String, Object> localScope, ForBlockResult forResult) {
         PropertyResult listRes = resolveProperty(component, localScope, forResult.listExpr);
         List<?> items = toList(listRes.value());
 
@@ -1692,15 +1701,18 @@ public interface JssrComponent {
 
                 if (flowRes.signal() == LoopSignal.BREAK) {
                     break;
+                } else if (flowRes.signal() == LoopSignal.RETURN) {
+                    return new ControlFlowResult(sb.toString(), LoopSignal.RETURN);
                 }
             }
-            return sb.toString();
+            return new ControlFlowResult(sb.toString(), LoopSignal.NONE);
         } else {
             if (forResult.hasElse) {
                 ControlFlowResult flowRes = parseControlFlowBlocks(component, localScope, forResult.elseBody);
-                return interpolateVariables(component, localScope, flowRes.content());
+                String interpolated = interpolateVariables(component, localScope, flowRes.content());
+                return new ControlFlowResult(interpolated, flowRes.signal());
             } else {
-                return "";
+                return new ControlFlowResult("", LoopSignal.NONE);
             }
         }
     }
@@ -1751,7 +1763,8 @@ public interface JssrComponent {
             || (text.startsWith("@else", idx) && isValidDirectiveBoundary(text, idx, 5))
             || (text.startsWith("@throw", idx) && isValidDirectiveBoundary(text, idx, 6))
             || (text.startsWith("@continue", idx) && isValidDirectiveBoundary(text, idx, 9))
-            || (text.startsWith("@break", idx) && isValidDirectiveBoundary(text, idx, 6));
+            || (text.startsWith("@break", idx) && isValidDirectiveBoundary(text, idx, 6))
+            || (text.startsWith("@return", idx) && isValidDirectiveBoundary(text, idx, 7));
     }
 
     private static int findNextControlFlowDirective(String text, int start) {

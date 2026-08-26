@@ -164,4 +164,38 @@ public class PrecompiledControlFlowTest {
         assertTrue(faultHtml.contains("Caught: Intentional template error"));
         assertTrue(faultHtml.contains("<p class=\"footer\">Done</p>"));
     }
+
+    public record PrecompiledReturnCard(boolean earlyExit) implements JssrComponent {
+        @Override
+        public String render() {
+            return """
+                <div>
+                    <h2>Precompiled Header</h2>
+                    @if (earlyExit) {
+                        <p>Precompiled early exit</p>
+                        @return
+                    }
+                    <p>Precompiled Footer</p>
+                </div>
+                """;
+        }
+    }
+
+    @Test
+    @DisplayName("Verify @return directive under precompiled JVM bytecode rendering")
+    void testPrecompiledReturnDirective() {
+        PrecompiledReturnCard exitCard = new PrecompiledReturnCard(true);
+        String exitHtml = exitCard.renderPrecompiled();
+        assertEquals(CompilationStatus.COMPILED, JssrPrecompiler.status(PrecompiledReturnCard.class),
+                "PrecompiledReturnCard must achieve COMPILED status without unreachable statement compilation errors");
+        assertTrue(exitHtml.contains("<h2>Precompiled Header</h2>"));
+        assertTrue(exitHtml.contains("<p>Precompiled early exit</p>"));
+        assertFalse(exitHtml.contains("<p>Precompiled Footer</p>"));
+
+        PrecompiledReturnCard normalCard = new PrecompiledReturnCard(false);
+        String normalHtml = normalCard.renderPrecompiled();
+        assertTrue(normalHtml.contains("<h2>Precompiled Header</h2>"));
+        assertFalse(normalHtml.contains("<p>Precompiled early exit</p>"));
+        assertTrue(normalHtml.contains("<p>Precompiled Footer</p>"));
+    }
 }

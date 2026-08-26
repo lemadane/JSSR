@@ -16,6 +16,7 @@ public sealed interface TemplateNode permits
         TemplateNode.ThrowNode,
         TemplateNode.ContinueNode,
         TemplateNode.BreakNode,
+        TemplateNode.ReturnNode,
         TemplateNode.ComponentNode {
 
     record StaticTextNode(String text) implements TemplateNode {}
@@ -43,6 +44,8 @@ public sealed interface TemplateNode permits
     record ContinueNode() implements TemplateNode {}
 
     record BreakNode() implements TemplateNode {}
+
+    record ReturnNode() implements TemplateNode {}
 
     record ComponentNode(String tagName, Map<String, String> attributes) implements TemplateNode {}
 }

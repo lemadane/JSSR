@@ -181,6 +181,7 @@ JSSR provides a rich, native control flow engine designed for Java 17+ record te
 | `@try { ... } @catch(err) { ... } @finally { ... }` | Template error boundaries for component fault isolation and safe fallback UI | `@try { ... } @catch(e) { ... }` |
 | `@throw("msg")` / `@throw(new Ex("msg"))` / `@throw(ex)` | Intentionally raise custom or instantiated exceptions inside templates | `@throw(new IllegalStateException("Quorum Lost"))` |
 | `@continue` / `@break` | Early iteration skipping (`@continue`) or loop/switch termination (`@break`) | `@continue` / `@break` |
+| `@return` | Immediate early execution return from caller component rendering | `@return` |
 
 ---
 
